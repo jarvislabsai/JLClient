@@ -170,7 +170,7 @@ class User(object):
                                 tboard_url=inst_o['tboard'],
                                 ssh_str=inst_o['ssh_str'],
                                 status=inst_o['status'],
-                                name=inst_o['name']
+                                name=inst_o['instance_name']
                                 )
                 instances.append(inst)
         return instances
