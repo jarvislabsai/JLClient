@@ -1,14 +1,8 @@
-#from .httpclient import post, post_files
-from httpclient import post, post_files
+from .httpclient import post, post_files
 import time
 import json
 token = None
 user_id = None
-import time
-
-token = 'Qq6o3HFWEdT9C2kUEx4GSybpHi6wy2-UZNPT7q08FJE'
-user_id = 'v.vishnu.k@gmail.com'
-#remove the above before commiting the code
 
 
 class Instance(object):
@@ -40,7 +34,6 @@ class Instance(object):
     def pause(self):
         """
         Pause the running machine.
-
         Returns:
             status: Returns the pause status of the machine --> success or failed.
         """
@@ -54,7 +47,6 @@ class Instance(object):
     def destroy(self):
         """
         Destroy the running or paused machine. 
-
         Returns:
             status:  Returns the destroy status of the machine --> success or failed.
         """
@@ -214,25 +206,3 @@ class User(object):
                  'script_id':bytes(f'{script_id}', 'utf-8'),
                  }
         resp = json.loads(post_files(files, 'updatescript'))
-
-    
-if __name__ == '__main__':
-    print("process started")
-    #print(User.add_script(script_path='/Users/vishnukumar/Desktop/vishnu/backend/Dev/JLClient_check/jlclient/check.txt', script_name='check.txt'))
-    #print(User.script_update(script_path='/Users/vishnukumar/Desktop/vishnu/backend/Dev/JLClient_check/jlclient/check1.txt', script_name='check1.txt', script_id='238'))
-    instance = Instance.create(gpu_type='A5000',
-                num_gpus=1,
-                hdd=20,
-                framework_id=0,
-                name='vishnu_check3',
-                #arguments= f'One Two',
-                script_id=257)
-    time.sleep(15)
-    print(instance)
-    instance.pause()
-    print("instance Paused")
-    time.sleep(15)
-    #print(instance.resume(arguments=f'dress selva'))
-    print(instance.resume())
-    
-    
