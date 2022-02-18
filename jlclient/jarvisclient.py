@@ -16,6 +16,7 @@ class Instance(object):
                  ssh_str: str,
                  status: str = '',
                  name: str = '',
+                 arguments: str = '',
                  ):
 
         self.gpu_type = gpu_type
@@ -28,11 +29,11 @@ class Instance(object):
         self.ssh_str = ssh_str
         self.status = status
         self.name = name
+        self.arguments = arguments
 
     def pause(self):
         """
         Pause the running machine.
-
         Returns:
             status: Returns the pause status of the machine --> success or failed.
         """
@@ -46,7 +47,6 @@ class Instance(object):
     def destroy(self):
         """
         Destroy the running or paused machine. 
-
         Returns:
             status:  Returns the destroy status of the machine --> success or failed.
         """
@@ -59,7 +59,7 @@ class Instance(object):
         self.gpu_type = req['gpu_type']
         self.hdd = req['hdd']
 
-    def resume(self, num_gpus=None, gpu_type=None, hdd=None):
+    def resume(self, num_gpus=None, gpu_type=None, hdd=None, arguments=None):
         """
         Resume the paused instance, can change the number of parameters like number of GPU's,
         GPU type and size of the volume. 
@@ -81,6 +81,7 @@ class Instance(object):
                'gpus': num_gpus if num_gpus else self.num_gpus,
                'gpu_type': gpu_type if gpu_type else self.gpu_type,
                'hdd': hdd if hdd else self.hdd,
+               'arguments': arguments if arguments else self.arguments,
                'user_id': user_id}
 
         resp = post(req, 'resume')
@@ -103,7 +104,7 @@ class Instance(object):
         return str(self.__dict__)
 
     @classmethod
-    def create(cls, gpu_type: str = 'RTX5000', num_gpus: int = 1, hdd: int = 20, framework_id: int = 0, name: str = 'Name me', script_id: str = None, image: str = None):
+    def create(cls, gpu_type: str = 'RTX5000', num_gpus: int = 1, hdd: int = 20, framework_id: int = 0, name: str = 'Name me', script_id: str = None, image: str = None, arguments: str = None):
         """
         Creates a virtual machine
 
@@ -138,7 +139,8 @@ class Instance(object):
                     'cores': f"{num_gpus*7}",
                     'name': name,
                     'script_id': script_id,
-                    'image': image
+                    'image': image,
+                    'arguments': arguments
                     }
 
         resp = post(req_data, 'create')
@@ -195,3 +197,13 @@ class User(object):
     @classmethod
     def get_script(cls):
         return post({'jwt': token, 'user_id': user_id}, 'getscript')
+
+    @classmethod
+    def update_script(cls, script_id, script_path, script_name):
+        files = {'script': open(f'{script_path}', 'rb'),
+                 'jwt': bytes(token, 'utf-8'),
+                 'user_id': bytes(user_id, 'utf-8'),
+                 'filename': bytes(f'{script_name}', 'utf-8'),
+                 'script_id':bytes(f'{script_id}', 'utf-8'),
+                 }
+        resp = json.loads(post_files(files, 'updatescript'))
