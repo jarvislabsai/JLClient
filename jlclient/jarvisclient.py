@@ -1,8 +1,14 @@
-from .httpclient import post, post_files
+#from .httpclient import post, post_files
+from httpclient import post, post_files
 import time
 import json
 token = None
 user_id = None
+import time
+
+token = 'Qq6o3HFWEdT9C2kUEx4GSybpHi6wy2-UZNPT7q08FJE'
+user_id = 'v.vishnu.k@gmail.com'
+#remove the above before commiting the code
 
 
 class Instance(object):
@@ -16,6 +22,7 @@ class Instance(object):
                  ssh_str: str,
                  status: str = '',
                  name: str = '',
+                 arguments: str = '',
                  ):
 
         self.gpu_type = gpu_type
@@ -28,6 +35,7 @@ class Instance(object):
         self.ssh_str = ssh_str
         self.status = status
         self.name = name
+        self.arguments = arguments
 
     def pause(self):
         """
@@ -59,7 +67,7 @@ class Instance(object):
         self.gpu_type = req['gpu_type']
         self.hdd = req['hdd']
 
-    def resume(self, num_gpus=None, gpu_type=None, hdd=None):
+    def resume(self, num_gpus=None, gpu_type=None, hdd=None, arguments=None):
         """
         Resume the paused instance, can change the number of parameters like number of GPU's,
         GPU type and size of the volume. 
@@ -81,6 +89,7 @@ class Instance(object):
                'gpus': num_gpus if num_gpus else self.num_gpus,
                'gpu_type': gpu_type if gpu_type else self.gpu_type,
                'hdd': hdd if hdd else self.hdd,
+               'arguments': arguments if arguments else self.arguments,
                'user_id': user_id}
 
         resp = post(req, 'resume')
@@ -103,7 +112,7 @@ class Instance(object):
         return str(self.__dict__)
 
     @classmethod
-    def create(cls, gpu_type: str = 'RTX5000', num_gpus: int = 1, hdd: int = 20, framework_id: int = 0, name: str = 'Name me', script_id: str = None, image: str = None):
+    def create(cls, gpu_type: str = 'RTX5000', num_gpus: int = 1, hdd: int = 20, framework_id: int = 0, name: str = 'Name me', script_id: str = None, image: str = None, arguments: str = None):
         """
         Creates a virtual machine
 
@@ -138,7 +147,8 @@ class Instance(object):
                     'cores': f"{num_gpus*7}",
                     'name': name,
                     'script_id': script_id,
-                    'image': image
+                    'image': image,
+                    'arguments': arguments
                     }
 
         resp = post(req_data, 'create')
@@ -194,3 +204,35 @@ class User(object):
     @classmethod
     def get_script(cls):
         return post({'jwt': token, 'user_id': user_id}, 'getscript')
+
+    @classmethod
+    def script_update(cls, script_id, script_path, script_name):
+        files = {'script': open(f'{script_path}', 'rb'),
+                 'jwt': bytes(token, 'utf-8'),
+                 'user_id': bytes(user_id, 'utf-8'),
+                 'filename': bytes(f'{script_name}', 'utf-8'),
+                 'script_id':bytes(f'{script_id}', 'utf-8'),
+                 }
+        resp = json.loads(post_files(files, 'updatescript'))
+
+    
+if __name__ == '__main__':
+    print("process started")
+    #print(User.add_script(script_path='/Users/vishnukumar/Desktop/vishnu/backend/Dev/JLClient_check/jlclient/check.txt', script_name='check.txt'))
+    #print(User.script_update(script_path='/Users/vishnukumar/Desktop/vishnu/backend/Dev/JLClient_check/jlclient/check1.txt', script_name='check1.txt', script_id='238'))
+    instance = Instance.create(gpu_type='A5000',
+                num_gpus=1,
+                hdd=20,
+                framework_id=0,
+                name='vishnu_check3',
+                #arguments= f'One Two',
+                script_id=257)
+    time.sleep(15)
+    print(instance)
+    instance.pause()
+    print("instance Paused")
+    time.sleep(15)
+    #print(instance.resume(arguments=f'dress selva'))
+    print(instance.resume())
+    
+    
