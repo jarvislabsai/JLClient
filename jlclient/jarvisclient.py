@@ -9,7 +9,6 @@ class Instance(object):
     def __init__(self, gpu_type: str,
                  num_gpus: int,
                  hdd: int,
-                 #paused_size: int,
                  framework_id: int,
                  url: str,
                  machine_id: int,
@@ -26,7 +25,6 @@ class Instance(object):
         self.gpu_type = gpu_type
         self.num_gpus = num_gpus
         self.hdd = hdd
-        self.paused_size = paused_size
         self.framework_id = framework_id
         self.url = url
         self.machine_id = machine_id
@@ -34,6 +32,7 @@ class Instance(object):
         self.ssh_str = ssh_str
         self.status = status
         self.name = name
+        self.paused_size = paused_size
         self.arguments = arguments
         self.is_reserved = is_reserved
         self.duration = duration
