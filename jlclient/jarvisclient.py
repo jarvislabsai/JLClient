@@ -17,7 +17,7 @@ class Instance(object):
                  status: str = '',
                  name: str = '',
                  arguments: str = '',
-                 paused_size: str = '',
+                 storage_occupied: str = '',
                  is_reserved:bool=True,
                  duration:str='hour'
                  ):
@@ -32,7 +32,7 @@ class Instance(object):
         self.ssh_str = ssh_str
         self.status = status
         self.name = name
-        self.paused_size = paused_size
+        self.storage_occupied = storage_occupied
         self.arguments = arguments
         self.is_reserved = is_reserved
         self.duration = duration
@@ -213,7 +213,7 @@ class User(object):
                 inst = Instance(gpu_type=inst_o['gpu_type'],
                                 num_gpus=inst_o['num_gpus'],
                                 hdd=inst_o['hdd'],
-                                paused_size=inst_o['v_size'],
+                                storage_occupied=inst_o['v_size'],
                                 framework_id=inst_o['framework_id'],
                                 url=inst_o['url'],
                                 machine_id=inst_o['machine_id'],
