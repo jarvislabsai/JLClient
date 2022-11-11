@@ -187,6 +187,7 @@ class Instance(object):
         instance = cls(gpu_type=gpu_type, 
                        num_gpus=num_gpus, 
                        hdd = hdd, 
+                       paused_size = '',
                        framework_id = framework_id,
                        url = resp['url'], 
                        machine_id = resp['machine_id'], 
