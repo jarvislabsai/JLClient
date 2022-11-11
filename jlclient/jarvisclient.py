@@ -9,7 +9,7 @@ class Instance(object):
     def __init__(self, gpu_type: str,
                  num_gpus: int,
                  hdd: int,
-                 paused_size: int,
+                 #paused_size: int,
                  framework_id: int,
                  url: str,
                  machine_id: int,
@@ -18,6 +18,7 @@ class Instance(object):
                  status: str = '',
                  name: str = '',
                  arguments: str = '',
+                 paused_size: str = '',
                  is_reserved:bool=True,
                  duration:str='hour'
                  ):
@@ -187,7 +188,7 @@ class Instance(object):
         instance = cls(gpu_type=gpu_type, 
                        num_gpus=num_gpus, 
                        hdd = hdd, 
-                       paused_size = '',
+                       #paused_size = '',
                        framework_id = framework_id,
                        url = resp['url'], 
                        machine_id = resp['machine_id'], 
