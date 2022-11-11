@@ -9,6 +9,7 @@ class Instance(object):
     def __init__(self, gpu_type: str,
                  num_gpus: int,
                  hdd: int,
+                 paused_size: int,
                  framework_id: int,
                  url: str,
                  machine_id: int,
@@ -24,6 +25,7 @@ class Instance(object):
         self.gpu_type = gpu_type
         self.num_gpus = num_gpus
         self.hdd = hdd
+        self.paused_size = paused_size
         self.framework_id = framework_id
         self.url = url
         self.machine_id = machine_id
@@ -210,6 +212,7 @@ class User(object):
                 inst = Instance(gpu_type=inst_o['gpu_type'],
                                 num_gpus=inst_o['num_gpus'],
                                 hdd=inst_o['hdd'],
+                                paused_size=inst_o['v_size'],
                                 framework_id=inst_o['framework_id'],
                                 url=inst_o['url'],
                                 machine_id=inst_o['machine_id'],
