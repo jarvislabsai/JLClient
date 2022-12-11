@@ -18,6 +18,8 @@ class Instance(object):
                  name: str = '',
                  arguments: str = '',
                  storage_occupied: str = '',
+                 docker_username: str = '',
+                 docker_password: str = '',
                  is_reserved:bool=True,
                  duration:str='hour'
                  ):
@@ -33,9 +35,13 @@ class Instance(object):
         self.status = status
         self.name = name
         self.storage_occupied = storage_occupied
+        self.docker_username = docker_username
+        self.docker_password = docker_password
         self.arguments = arguments
         self.is_reserved = is_reserved
         self.duration = duration
+        
+
 
     def pause(self):
         """
@@ -70,7 +76,9 @@ class Instance(object):
                 hdd=None, 
                 arguments=None,
                 is_reserved:bool=None,
-                duration:str=None
+                duration:str=None,
+                docker_username:str=None,
+                docker_password:str=None
                 ):
         """
         Resume the paused instance, can change the number of parameters like number of GPU's,
@@ -100,6 +108,8 @@ class Instance(object):
                
                'is_reserved': self.is_reserved if is_reserved is None else is_reserved,
                'duration':duration if duration else self.duration,
+               'docker_username':docker_username if docker_username else None,
+               'docker_password':docker_password if docker_password else None,
                'user_id': user_id}
 
         resp = post(req, 'resume')
@@ -132,7 +142,9 @@ class Instance(object):
                image: str = None, 
                arguments: str = None,
                is_reserved:bool=True,
-               duration:str='hour'
+               duration:str='hour',
+               docker_username:str=None,
+               docker_password:str=None
                ):
         """
         Creates a virtual machine
@@ -175,7 +187,9 @@ class Instance(object):
                     'image': image,
                     'arguments': arguments,
                     'is_reserved':is_reserved,
-                    'duration':duration
+                    'duration':duration,
+                    'docker_username':docker_username,
+                    'docker_password':docker_password
                     }
 
         resp = post(req_data, 'create')
