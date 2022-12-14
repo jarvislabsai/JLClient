@@ -20,8 +20,8 @@ class Instance(object):
                  storage_occupied: str = '',
                  docker_username: str = '',
                  docker_password: str = '',
-                 is_reserved:bool=True,
-                 duration:str='hour'
+                 is_reserved: bool = True,
+                 duration: str = 'hour'
                  ):
 
         self.gpu_type = gpu_type
@@ -40,8 +40,6 @@ class Instance(object):
         self.arguments = arguments
         self.is_reserved = is_reserved
         self.duration = duration
-        
-
 
     def pause(self):
         """
@@ -71,15 +69,15 @@ class Instance(object):
         self.gpu_type = req['gpu_type']
         self.hdd = req['hdd']
 
-    def resume(self, num_gpus=None, 
-                gpu_type=None, 
-                hdd=None, 
-                arguments=None,
-                is_reserved:bool=None,
-                duration:str=None,
-                docker_username:str=None,
-                docker_password:str=None
-                ):
+    def resume(self, num_gpus=None,
+               gpu_type=None,
+               hdd=None,
+               arguments=None,
+               is_reserved: bool = None,
+               duration: str = None,
+               docker_username: str = None,
+               docker_password: str = None
+               ):
         """
         Resume the paused instance, can change the number of parameters like number of GPU's,
         GPU type and size of the volume. 
@@ -92,9 +90,9 @@ class Instance(object):
 
             hdd (int, optional):        Persistance storage volume size ranges from 20GB to 500GB in multiples of 10.
                                         Defaults to None.
-                                        
+
             is_reserved (bool, optional): Is instance reserved. You can pass True/False. Choose False for spot instances. Defaults to True.
-            
+
             duration (str, optional):   You can choose week/month for discounted price. For more details, check pricing page. Defaults to hour
         Returns:
             obj: Return the resume object. If failed, return error message.
@@ -105,11 +103,11 @@ class Instance(object):
                'gpu_type': gpu_type if gpu_type else self.gpu_type,
                'hdd': hdd if hdd else self.hdd,
                'arguments': arguments if arguments else self.arguments,
-               
+
                'is_reserved': self.is_reserved if is_reserved is None else is_reserved,
-               'duration':duration if duration else self.duration,
-               'docker_username':docker_username if docker_username else None,
-               'docker_password':docker_password if docker_password else None,
+               'duration': duration if duration else self.duration,
+               'docker_username': docker_username if docker_username else None,
+               'docker_password': docker_password if docker_password else None,
                'user_id': user_id}
 
         resp = post(req, 'resume')
@@ -133,18 +131,18 @@ class Instance(object):
         return str(self.__dict__)
 
     @classmethod
-    def create(cls, gpu_type: str = 'RTX5000', 
-               num_gpus: int = 1, 
-               hdd: int = 20, 
-               framework_id: int = 0, 
+    def create(cls, gpu_type: str = 'RTX5000',
+               num_gpus: int = 1,
+               hdd: int = 20,
+               framework_id: int = 0,
                name: str = 'Name me',
-               script_id: str = None, 
-               image: str = None, 
+               script_id: str = None,
+               image: str = None,
                arguments: str = None,
-               is_reserved:bool=True,
-               duration:str='hour',
-               docker_username:str=None,
-               docker_password:str=None
+               is_reserved: bool = True,
+               duration: str = 'hour',
+               docker_username: str = None,
+               docker_password: str = None
                ):
         """
         Creates a virtual machine
@@ -166,9 +164,9 @@ class Instance(object):
 
             image (str, optional):      Name of the docker image like pytorch/pytorch. Applies only for the BYOC mode.
                                         Please select the framework_id=3. Defaults to None.
-                                        
+
             is_reserved (bool, optional): Is instance reserved. You can pass True/False. Choose False for spot instances. Defaults to True.
-            
+
             duration (str, optional):   You can choose week/month for discounted price. For more details, check pricing page. Defaults to hour.
 
         Returns:
@@ -186,10 +184,10 @@ class Instance(object):
                     'script_id': script_id,
                     'image': image,
                     'arguments': arguments,
-                    'is_reserved':is_reserved,
-                    'duration':duration,
-                    'docker_username':docker_username,
-                    'docker_password':docker_password
+                    'is_reserved': is_reserved,
+                    'duration': duration,
+                    'docker_username': docker_username,
+                    'docker_password': docker_password
                     }
 
         resp = post(req_data, 'create')
@@ -198,18 +196,18 @@ class Instance(object):
         if resp['error_code']:
             return {'error': resp['error_message']}
 
-        instance = cls(gpu_type=gpu_type, 
-                       num_gpus=num_gpus, 
-                       hdd = hdd, 
+        instance = cls(gpu_type=gpu_type,
+                       num_gpus=num_gpus,
+                       hdd=hdd,
                        #paused_size = '',
-                       framework_id = framework_id,
-                       url = resp['url'], 
-                       machine_id = resp['machine_id'], 
-                       tboard_url = resp['tboard_url'], 
-                       ssh_str = resp['ssh_str'], 
-                       status = 'Running', 
-                       name = name,
-                       is_reserved = is_reserved,
+                       framework_id=framework_id,
+                       url=resp['url'],
+                       machine_id=resp['machine_id'],
+                       tboard_url=resp['tboard_url'],
+                       ssh_str=resp['ssh_str'],
+                       status='Running',
+                       name=name,
+                       is_reserved=is_reserved,
                        duration=duration
                        )
         return instance
@@ -236,20 +234,24 @@ class User(object):
                                 status=inst_o['status'],
                                 name=inst_o['instance_name'],
                                 is_reserved=inst_o['is_reserved'],
-                                duration=inst_o['frequency'],
+                                frequency=inst_o['frequency'],
+                                duration=inst_o['duration']
                                 )
                 instances.append(inst)
         if status:
-            assert status.lower() in ['running','paused','resuming','pausing'],'Invalid Status'
-            instances = [o for o in instances if o.status.lower() == status.lower()]
+            assert status.lower() in ['running', 'paused',
+                                      'resuming', 'pausing'], 'Invalid Status'
+            instances = [o for o in instances if o.status.lower()
+                         == status.lower()]
         return instances
-    
+
     @classmethod
-    def get_instance(cls,instance_id=None):
-        assert instance_id!=None, 'pass a valid instance/machine id'
-        instances = [instance for instance in User.get_instances() if str(instance.machine_id)==str(instance_id)]
+    def get_instance(cls, instance_id=None):
+        assert instance_id != None, 'pass a valid instance/machine id'
+        instances = [instance for instance in User.get_instances() if str(
+            instance.machine_id) == str(instance_id)]
         return instances[0] if len(instances) else None
-    
+
     @classmethod
     def add_script(cls, script_path, script_name):
         files = {'script': open(f'{script_path}', 'rb'),
@@ -277,6 +279,6 @@ class User(object):
                  'jwt': bytes(token, 'utf-8'),
                  'user_id': bytes(user_id, 'utf-8'),
                  'filename': bytes(f'{script_name}', 'utf-8'),
-                 'script_id':bytes(f'{script_id}', 'utf-8'),
+                 'script_id': bytes(f'{script_id}', 'utf-8'),
                  }
         resp = json.loads(post_files(files, 'updatescript'))
