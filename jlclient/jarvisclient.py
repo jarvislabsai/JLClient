@@ -21,7 +21,8 @@ class Instance(object):
                  docker_username: str = '',
                  docker_password: str = '',
                  is_reserved: bool = True,
-                 duration: str = 'hour'
+                 duration: str = 'hour',
+                 frequency: str = '',
                  ):
 
         self.gpu_type = gpu_type
