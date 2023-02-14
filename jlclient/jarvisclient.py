@@ -1,4 +1,4 @@
-from .httpclient import post, post_files
+from httpclient import post, post_files
 import time
 import json
 token = None
@@ -213,7 +213,8 @@ class Instance(object):
                        status='Running',
                        name=name,
                        is_reserved=is_reserved,
-                       duration=duration
+                       duration=duration,
+                       frequency = duration,
                        )
         return instance
 
@@ -287,3 +288,4 @@ class User(object):
                  'script_id': bytes(f'{script_id}', 'utf-8'),
                  }
         resp = json.loads(post_files(files, 'updatescript'))
+        
