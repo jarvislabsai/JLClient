@@ -1,4 +1,4 @@
-from httpclient import post, post_files
+from .httpclient import post, post_files
 import time
 import json
 token = None
