@@ -41,6 +41,8 @@ class Instance(object):
         self.arguments = arguments
         self.is_reserved = is_reserved
         self.duration = duration
+        self.frequency = frequency
+        
 
     def pause(self):
         """
@@ -75,7 +77,8 @@ class Instance(object):
                hdd=None,
                arguments=None,
                is_reserved: bool = None,
-               duration: str = None,
+            #    duration: str = None,
+                frequency: str = None,
                docker_username: str = None,
                docker_password: str = None
                ):
@@ -94,7 +97,7 @@ class Instance(object):
 
             is_reserved (bool, optional): Is instance reserved. You can pass True/False. Choose False for spot instances. Defaults to True.
 
-            duration (str, optional):   You can choose week/month for discounted price. For more details, check pricing page. Defaults to hour
+            frequency (str, optional):   You can choose week/month for discounted price. For more details, check pricing page. Defaults to hour
         Returns:
             obj: Return the resume object. If failed, return error message.
         """
@@ -106,7 +109,8 @@ class Instance(object):
                'arguments': arguments if arguments else self.arguments,
 
                'is_reserved': self.is_reserved if is_reserved is None else is_reserved,
-               'duration': duration if duration else self.duration,
+            #    'duration': duration if duration else self.duration,
+                'duration': frequency if frequency else self.frequency,
                'docker_username': docker_username if docker_username else None,
                'docker_password': docker_password if docker_password else None,
                'user_id': user_id}
@@ -123,7 +127,7 @@ class Instance(object):
             self.update_instance_meta(req)
             return {'success': True}
         else:
-            return {'success': True, 'error_message': resp['error_message']}
+            return {'success': False, 'error_message': resp['error_message']}
 
     def __str__(self):
         return str(self.__dict__)
