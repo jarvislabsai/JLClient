@@ -2,7 +2,7 @@ import requests
 import urllib3
 import certifi
 import json
-url = "backend.jarvislabs.net"
+url = "backend.jarvislabs.net/"
 
 http = urllib3.PoolManager(
     cert_reqs="CERT_REQUIRED",
