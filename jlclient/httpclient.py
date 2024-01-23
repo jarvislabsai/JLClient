@@ -2,7 +2,9 @@ import requests
 import urllib3
 import certifi
 import json
-url = "backend.jarvislabs.net/"
+import urllib.parse
+url = "https://backendprod.jarvislabs.net/templates/"
+get_url = "https://backendprod.jarvislabs.net/"
 
 http = urllib3.PoolManager(
     cert_reqs="CERT_REQUIRED",
@@ -10,12 +12,33 @@ http = urllib3.PoolManager(
 )
 
 
-def post(data, func):
+def post(data, func, token, query_params=None, no_template = None):
     encoded_body = json.dumps(data)
     try:
-        r = http.request('POST', url+func,
-                         headers={'Content-Type': 'application/json'},
+        full_url = url + func
+        if query_params:
+            if query_params:
+                full_url += "?" + urllib.parse.urlencode(query_params)
+        r = http.request('POST', full_url,
+                         headers = {
+                                    'Authorization': f'Bearer {token}',
+                                    'Content-Type': 'application/json'
+                                   },
                          body=encoded_body,
+                         # fields={'files': files}
+                         #   timeout=10
+                         )
+    except requests.exceptions.Timeout as e:
+        print(e)
+    return json.loads(r.data)
+
+def get(func, token, data=None):
+    try:
+        r = http.request('GET', get_url+func,
+                         headers = {
+                                    'Authorization': f'Bearer {token}',
+                                    'Content-Type': 'application/json'
+                                   },
                          # fields={'files': files}
                          #   timeout=10
                          )
@@ -27,3 +50,4 @@ def post(data, func):
 def post_files(files, func):
     r = requests.post(url+func, files=files)
     return r.text
+
