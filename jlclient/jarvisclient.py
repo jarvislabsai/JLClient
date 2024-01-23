@@ -114,16 +114,22 @@ class Instance(object):
             resume_req['num_gpus'] = num_gpus if num_gpus else self.num_gpus
             resume_req['is_reserved'] = is_reserved if is_reserved else self.is_reserved
         
-        resume_resp = post(resume_req,f'{self.template}/resume', jarvisclient.token)
-        print(resume_resp)
-        self.machine_id = resume_resp['machine_id']
-        machine_details = Instance.get_instance_details(machine_id=self.machine_id)
-        self.update_instance_meta(req=resume_req,machine_details=machine_details)
-        return self
+        try:
+            resume_resp = post(resume_req,f'{self.template}/resume', jarvisclient.token)
+            self.machine_id = resume_resp['machine_id']
+            machine_details = Instance.get_instance_details(machine_id=self.machine_id)
+            self.update_instance_meta(req=resume_req,machine_details=machine_details)
+            return self
+        
+        except InstanceCreationException:
+            return {'error_message': 'Failed to create the instance. Please reach to the team.'}
+
+        except Exception as e:
+            return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
 
     def get_instance_details(machine_id):
         attempts = 0
-        max_attempts = 4
+        max_attempts = 5
 
         while attempts < max_attempts:
             machine_status_response = get('https://backendprod.jarvislabs.net/users/fetch',
@@ -139,13 +145,13 @@ class Instance(object):
                 attempts+= 1
         
         if attempts == max_attempts and machine_details['status'] != 'Running':
-            print('failed to create the instance. Please check it.')
-            #add exception handling code.
+            raise InstanceCreationException
 
     @classmethod
     def create(cls,
                instance_type :str,
                gpu_type: str = 'RTX5000',
+               template: str = 'pytorch', 
                num_gpus: int = 1,
                num_cpus: int = 1,
                storage: int = 20,
@@ -166,7 +172,6 @@ class Instance(object):
                     'duration':duration,
                     'http_ports' :http_ports}
         instance_params = {}
-        template = 'pytorch' #replace this with dynamic template
 
         if instance_type.lower() == 'gpu':
             req_data['gpu_type'] = gpu_type
@@ -178,26 +183,38 @@ class Instance(object):
             instance_params['gpu_type'] = 'CPU'
             instance_params['num_cpus'] = num_cpus
 
-        resp = post(req_data, f'{template}/create', jarvisclient.token)
-        machine_id = resp['machine_id']
+        try:
+            resp = post(req_data, f'{template}/create', jarvisclient.token)
+            machine_id = resp['machine_id']
+            machine_details = Instance.get_instance_details(machine_id=machine_id)
+            instance_params.update({
+                'hdd': storage,
+                'name': machine_details.get('name'),
+                'url': machine_details.get('url'),
+                'endpoints': machine_details.get('endpoints'),
+                'ssh_str': machine_details.get('ssh_str'),
+                'status': machine_details.get('status'),
+                'machine_id': machine_details.get('machine_id'),
+                'duration': machine_details.get('frequency'),
+                'template': machine_details.get('framework'),
+        })
 
-        machine_details = Instance.get_instance_details(machine_id=machine_id)
+            instance = cls(**instance_params)
+            return instance
+        
+        except InstanceCreationException:
+            return {'error_message': 'Failed to create the instance. Please reach to the team.'}
 
-        instance_params.update({
-            'hdd': storage,
-            'name': machine_details.get('name'),
-            'url': machine_details.get('url'),
-            'endpoints': machine_details.get('endpoints'),
-            'ssh_str': machine_details.get('ssh_str'),
-            'status': machine_details.get('status'),
-            'machine_id': machine_details.get('machine_id'),
-            'duration': machine_details.get('frequency'),
-            'template': machine_details.get('framework'),
-    })
+        except Exception as e:
+            return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
 
-        instance = cls(**instance_params)
-        return instance
 
+class InstanceCreationException(Exception):
+    """Exception raised when instance creation fails."""
+
+    def __init__(self, message="Failed to create the instance. Please check it."):
+        self.message = message
+        super().__init__(self.message)
 
 class User(object):
     def __init__(self) -> None:
@@ -230,3 +247,14 @@ class User(object):
         assert instance_id != None, 'pass a valid instance/machine id'
         instance = [instance for instance in User.get_instances() if str(instance['machine_id']) == str(instance_id)]
         return Instance(**instance[0])
+    
+    @classmethod
+    def get_templates(cls):
+        templates = get(f"https://backendprod.jarvislabs.net/templates/misc/frameworks", 
+                    jarvisclient.token)
+        return {'templates' : [template['id'] for template in templates['frameworks']]}
+    
+    @classmethod
+    def get_balance(cls):
+        return get(f"https://backendprod.jarvislabs.net/users/balance", 
+                    jarvisclient.token)

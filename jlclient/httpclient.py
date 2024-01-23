@@ -18,7 +18,6 @@ def post(data, func, token, query_params=None, no_template = None):
         if query_params:
             if query_params:
                 full_url += "?" + urllib.parse.urlencode(query_params)
-        print(full_url)
         r = http.request('POST', full_url,
                          headers = {
                                     'Authorization': f'Bearer {token}',
@@ -34,7 +33,6 @@ def post(data, func, token, query_params=None, no_template = None):
 
 def get(func, token, data=None):
     try:
-        print(func)
         r = http.request('GET', func,
                          headers = {
                                     'Authorization': f'Bearer {token}',
