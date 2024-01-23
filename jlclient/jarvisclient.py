@@ -132,7 +132,7 @@ class Instance(object):
         max_attempts = 5
 
         while attempts < max_attempts:
-            machine_status_response = get('https://backendprod.jarvislabs.net/users/fetch',
+            machine_status_response = get('users/fetch',
                                       jarvisclient.token)
             
             machine_details = next((instnace for instnace in machine_status_response['instances'] 
@@ -222,8 +222,7 @@ class User(object):
     
     @classmethod
     def get_instances(cls):
-        print("entered the function")
-        resp = get(f"https://backendprod.jarvislabs.net/users/fetch", 
+        resp = get(f"users/fetch", 
                     jarvisclient.token)
         instances = []
         for instance in resp['instances']:
@@ -250,11 +249,11 @@ class User(object):
     
     @classmethod
     def get_templates(cls):
-        templates = get(f"https://backendprod.jarvislabs.net/templates/misc/frameworks", 
+        templates = get(f"templates/misc/frameworks", 
                     jarvisclient.token)
         return {'templates' : [template['id'] for template in templates['frameworks']]}
     
     @classmethod
     def get_balance(cls):
-        return get(f"https://backendprod.jarvislabs.net/users/balance", 
+        return get(f"users/balance", 
                     jarvisclient.token)

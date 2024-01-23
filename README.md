@@ -41,9 +41,9 @@ Generate a token from [here](https://cloud.jarvislabs.ai/settings#api).
 | Parameter           | Type | Description/Values                                                        | Default Value |
 | ------------------- | ---- | ------------------------------------------------------------------------- | ------------- |
 | instance_type       | str  | Choose between GPU or CPU.                                                | GPU           |
-| num_gpus / num_cpus | int  | According to the instance_type, choose the number of GPUs or CPUs.        | 1             |
-| gpu_type            | str  | Choose from **A100**, **A5000**, **A6000**, **RTX6000Ada**, **RTX5000**.  | RTX5000       |
-| template            | str  | Use `User.get_templates()` in our JLclient to get all templates.          | pytorch       |
+| num_gpus / num_cpus | int  | Choose between 1 to 8 for GPU instance.       | 1             |
+| gpu_type            | str  | Choose from **A100**, **RTX6000Ada**, **A5000**, **A6000**,  **RTX5000**.  | RTX5000       |
+| template            | str  | Use `User.get_templates()` to get all templates.          | pytorch       |
 | script_id           | str  | If you have a script you can pass it.                                     | None          |
 | is_reserved         | bool | True refers to an on-demand instance. False refers to a spot instance.    | True          |
 | duration            | str  | Choose hour, week, and month. The pricing changes based on the duration.. | hour          |
@@ -118,18 +118,16 @@ instance.resume()
 #Example 2:
 
 instance.resume(num_gpus=1,
-
                 gpu_type='RTX5000',
-
                 hdd=100)
 
 
-#Switching GPU to CPU Instance
+#Switching GPU to CPU Instance, pass the num_cpus parameter
 
 instance.resume(num_cpus=1,
                 hdd=25)
 
-#Switching CPU to GPU Instance
+#Switching CPU to GPU Instance, pass the num_gpus & gpu_type
 
 instance.resume(gpu_type='RTX6000Ada',
                 num_gpus=1,
@@ -164,7 +162,7 @@ The `User` class comes with the below key functionalities.
 
 - `User.get_instances()` : Returns a list of `Instance` objects representing instances in your account.
 
-- `User.get_instance()` : Returns the `Instance` Class.
+- `User.get_instance()` : Returns the `Instance` object.
 
 - `User.get_balance()` : Return the balance of the user.
 

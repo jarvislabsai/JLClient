@@ -4,6 +4,7 @@ import certifi
 import json
 import urllib.parse
 url = "https://backendprod.jarvislabs.net/templates/"
+get_url = "https://backendprod.jarvislabs.net/"
 
 http = urllib3.PoolManager(
     cert_reqs="CERT_REQUIRED",
@@ -33,7 +34,7 @@ def post(data, func, token, query_params=None, no_template = None):
 
 def get(func, token, data=None):
     try:
-        r = http.request('GET', func,
+        r = http.request('GET', get_url+func,
                          headers = {
                                     'Authorization': f'Bearer {token}',
                                     'Content-Type': 'application/json'
