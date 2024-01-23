@@ -48,14 +48,14 @@ Generate a token from [here](https://cloud.jarvislabs.ai/settings#api).
 | is_reserved         | bool | True refers to an on-demand instance. False refers to a spot instance.    | True          |
 | duration            | str  | Choose hour, week, and month. The pricing changes based on the duration.. | hour          |
 | http_ports          | str  | As per your requirement, you can specify the ports.                       | None          |
-| hdd                 | int  | Choose between 20GB to 2TB.                                               | 20            |
+| storage                 | int  | Choose between 20GB to 2TB.                                               | 20            |
 
 ```python
 # CPU Instance Example
 
 instance: Instance = Instance.create('CPU',
                             num_cpus=1,
-                            hdd=25,
+                            storage=25,
                             template='pytorch',
                             name='cpu instance')
 
@@ -65,7 +65,7 @@ instance: Instance = Instance.create('CPU',
 instance: Instance = Instance.create('GPU',
                             gpu_type='RTX6000Ada',
                             num_gpus=1,
-                            hdd=50,
+                            storage=50,
                             template='pytorch',
                             name='gpu instance')
 
@@ -77,7 +77,7 @@ This should return the Instance object, which includes the following attributes
 - gpu_type
 - num_gpus
 - num_cpus
-- hdd
+- storage
 - name
 - machine_id
 - script_id
@@ -119,19 +119,19 @@ instance.resume()
 
 instance.resume(num_gpus=1,
                 gpu_type='RTX5000',
-                hdd=100)
+                storage=100)
 
 
 #Switching GPU to CPU Instance, pass the num_cpus parameter
 
 instance.resume(num_cpus=1,
-                hdd=25)
+                storage=25)
 
 #Switching CPU to GPU Instance, pass the num_gpus & gpu_type
 
 instance.resume(gpu_type='RTX6000Ada',
                 num_gpus=1,
-                hdd=25)
+                storage=25)
 ```
 
 You can modify an existing instance by changing the below `resume` parameters.
@@ -140,7 +140,7 @@ You can modify an existing instance by changing the below `resume` parameters.
 
 - gpu_type
 
-- hdd
+- storage
 
 or just call `resume` to start with the same configuration.
 

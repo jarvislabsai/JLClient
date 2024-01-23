@@ -85,7 +85,7 @@ class Instance(object):
         self.template=machine_details.get('framework')
 
     def resume(self,
-               hdd: int=None,
+               storage: int=None,
                num_cpus: int = None,
                num_gpus :int=None,
                gpu_type: str=None,
@@ -97,7 +97,7 @@ class Instance(object):
                ):
         resume_req = {
             'machine_id': self.machine_id,
-            'hdd' :  hdd or self.hdd,
+            'hdd' :  storage or self.hdd,
             'name' : name or self.name,
             'script_id' :  script_id or self.script_id,
             'script_args' : script_args or self.script_args,
