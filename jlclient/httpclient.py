@@ -3,8 +3,7 @@ import urllib3
 import certifi
 import json
 import urllib.parse
-url = "https://backendprod.jarvislabs.net/templates/"
-get_url = "https://backendprod.jarvislabs.net/"
+url = "https://backendprod.jarvislabs.net/"
 
 http = urllib3.PoolManager(
     cert_reqs="CERT_REQUIRED",
@@ -17,7 +16,6 @@ def post(data, func, token, query_params=None, no_template = None):
     try:
         full_url = url + func
         if query_params:
-            if query_params:
                 full_url += "?" + urllib.parse.urlencode(query_params)
         r = http.request('POST', full_url,
                          headers = {
@@ -34,7 +32,7 @@ def post(data, func, token, query_params=None, no_template = None):
 
 def get(func, token, data=None):
     try:
-        r = http.request('GET', get_url+func,
+        r = http.request('GET', url+func,
                          headers = {
                                     'Authorization': f'Bearer {token}',
                                     'Content-Type': 'application/json'
