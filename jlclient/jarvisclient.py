@@ -115,7 +115,7 @@ class Instance(object):
             resume_req['is_reserved'] = is_reserved if is_reserved else self.is_reserved
         
         try:
-            resume_resp = post(resume_req,f'{self.template}/resume', jarvisclient.token)
+            resume_resp = post(resume_req,f'templates/{self.template}/resume', jarvisclient.token)
             self.machine_id = resume_resp['machine_id']
             machine_details = Instance.get_instance_details(machine_id=self.machine_id)
             self.update_instance_meta(req=resume_req,machine_details=machine_details)
@@ -184,7 +184,7 @@ class Instance(object):
             instance_params['num_cpus'] = num_cpus
 
         try:
-            resp = post(req_data, f'{template}/create', jarvisclient.token)
+            resp = post(req_data, f'templates/{template}/create', jarvisclient.token)
             machine_id = resp['machine_id']
             machine_details = Instance.get_instance_details(machine_id=machine_id)
             instance_params.update({
@@ -249,7 +249,7 @@ class User(object):
     
     @classmethod
     def get_templates(cls):
-        templates = get(f"templates/misc/frameworks", 
+        templates = get(f"misc/frameworks", 
                     jarvisclient.token)
         return {'templates' : [template['id'] for template in templates['frameworks']]}
     
