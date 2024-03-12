@@ -257,3 +257,8 @@ class User(object):
     def get_balance(cls):
         return get(f"users/balance", 
                     jarvisclient.token)
+    
+    @classmethod
+    def get_scripts(cls):
+        resp = get("/scripts/",jarvisclient.token)
+        return resp['script_meta']
