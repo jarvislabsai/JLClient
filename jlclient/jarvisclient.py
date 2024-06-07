@@ -234,7 +234,7 @@ class User(object):
                             ssh_str=instance['ssh_str'],
                             status=instance['status'],
                             machine_id=instance['machine_id'],
-                            duration=instance['frequency'],
+                            # duration=instance['frequency'],
                             template=instance['framework'],
                             num_gpus=instance['num_gpus'],
                             )
