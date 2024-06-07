@@ -239,7 +239,7 @@ class User(object):
                             num_gpus=instance['num_gpus'],
                             )
             instances.append(inst)
-        return [instance.__dict__ for instance in instances]
+        return instances
     
     @classmethod
     def get_instance(cls, instance_id=None):
