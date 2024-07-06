@@ -244,8 +244,8 @@ class User(object):
     @classmethod
     def get_instance(cls, instance_id=None):
         assert instance_id != None, 'pass a valid instance/machine id'
-        instance = [instance for instance in User.get_instances() if str(instance['machine_id']) == str(instance_id)]
-        return Instance(**instance[0])
+        instance = [instance for instance in User.get_instances() if str(instance.machine_id) == str(instance_id)]
+        return instance[0]
     
     @classmethod
     def get_templates(cls):
