@@ -221,7 +221,7 @@ class User(object):
         pass
     
     @classmethod
-    def get_instances(cls):
+    def get_instances(cls)->list[Instance]:
         resp = get(f"users/fetch", 
                     jarvisclient.token)
         instances = []
@@ -242,10 +242,13 @@ class User(object):
         return instances
     
     @classmethod
-    def get_instance(cls, instance_id=None):
+    def get_instance(cls, instance_id=None) -> Instance:
         assert instance_id != None, 'pass a valid instance/machine id'
-        instance = [instance for instance in User.get_instances() if str(instance['machine_id']) == str(instance_id)]
-        return Instance(**instance[0])
+        instances = User.get_instances()
+        instance = [instance for instance in instances if str(instance.__dict__['machine_id']) == str(instance_id)]
+        if len(instance) == 1:
+            return instance[0]
+        print("Invalid machine id")
     
     @classmethod
     def get_templates(cls):
