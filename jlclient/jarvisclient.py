@@ -3,7 +3,6 @@ from jlclient import jarvisclient
 import time
 token = None
 
-
 class Instance(object):
     def __init__(self,
                  hdd: int,
@@ -207,7 +206,6 @@ class Instance(object):
 
         except Exception as e:
             return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
-
 
 class InstanceCreationException(Exception):
     """Exception raised when instance creation fails."""

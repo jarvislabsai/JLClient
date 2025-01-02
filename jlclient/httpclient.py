@@ -10,7 +10,6 @@ http = urllib3.PoolManager(
     ca_certs=certifi.where()
 )
 
-
 def post(data, func, token, query_params=None, no_template = None):
     encoded_body = json.dumps(data)
     try:
@@ -43,7 +42,6 @@ def get(func, token, data=None):
     except requests.exceptions.Timeout as e:
         print(e)
     return json.loads(r.data)
-
 
 def post_files(files, func):
     r = requests.post(url+func, files=files)
