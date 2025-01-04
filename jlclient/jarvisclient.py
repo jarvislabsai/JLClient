@@ -92,7 +92,8 @@ class Instance(object):
                script_id: str=None,
                script_args: str=None,
                is_reserved: bool=None,
-               duration: str=None
+               duration: str=None,
+               fs_id: str=None
                ):
         resume_req = {
             'machine_id': self.machine_id,
@@ -103,7 +104,8 @@ class Instance(object):
             'duration' : duration or self.duration,
             'gpu_type': None,
             'num_gpus': None,
-            'num_cpus': None
+            'num_cpus': None,
+            'fs_id': fs_id
         }
 
         if num_cpus or self.gpu_type == 'CPU' and not num_gpus:
@@ -134,9 +136,9 @@ class Instance(object):
             machine_status_response = get('users/fetch',
                                       jarvisclient.token)
             
-            machine_details = next((instnace for instnace in machine_status_response['instances'] 
-                                    if instnace.get('machine_id') == machine_id), 
-                                    None)
+            matching_instances = [instance for instance in machine_status_response['instances'] 
+                                if instance.get('machine_id') == machine_id]
+            machine_details = matching_instances[0] if matching_instances else None
             if machine_details['status'] == 'Running':
                 return machine_details
             else:
@@ -160,7 +162,8 @@ class Instance(object):
                script_args: str = None,
                is_reserved :bool = True,
                duration: str = 'hour',
-               http_ports : str = ''
+               http_ports : str = '',
+               fs_id: str = None
                ):
         req_data = {'hdd':storage,
                     'name':name,
@@ -169,7 +172,8 @@ class Instance(object):
                     'script_args':script_args,
                     'is_reserved' :is_reserved,
                     'duration':duration,
-                    'http_ports' :http_ports}
+                    'http_ports' :http_ports,
+                    'fs_id':fs_id}
         instance_params = {}
 
         if instance_type.lower() == 'gpu':
@@ -206,6 +210,24 @@ class Instance(object):
 
         except Exception as e:
             return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
+
+    def __str__(self):
+        """Returns a formatted string with instance metadata when the object is printed."""
+        metadata = [
+            f"Instance Name: {self.name}",
+            f"Status: {self.status}",
+            f"Machine ID: {self.machine_id}",
+            f"GPU Type: {self.gpu_type}",
+            f"Number of GPUs: {self.num_gpus}",
+            f"Number of CPUs: {self.num_cpus}",
+            f"Storage (GB): {self.hdd}",
+            f"Template: {self.template}",
+            f"Duration: {self.duration}",
+            f"SSH Command: {self.ssh_str}",
+            f"URL: {self.url}",
+            f"Endpoints: {self.endpoints}"
+        ]
+        return "\n".join(metadata)
 
 class InstanceCreationException(Exception):
     """Exception raised when instance creation fails."""
@@ -263,3 +285,19 @@ class User(object):
     def get_scripts(cls):
         resp = get("/scripts/",jarvisclient.token)
         return resp['script_meta']
+    
+class FileSystem(object):
+    def list(self):
+        return get(f"filesystem/list",jarvisclient.token)
+    
+    def create(self, fs_name, storage):
+        return post({'fs_name':fs_name,'storage':storage},
+                    f"filesystem/create",
+                    jarvisclient.token
+                    )
+    
+    def delete(self, fs_id):
+        return post({},
+                    f"filesystem/delete",
+                    jarvisclient.token,
+                    query_params={'fs_id':fs_id})
