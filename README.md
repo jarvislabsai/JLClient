@@ -32,7 +32,7 @@ jarvisclient.token = '**************************duWRbO68IiMTkQKWi48'
 
 ```
 
-Generate a token from [here](https://cloud.jarvislabs.ai/settings#api).
+Generate a token from [here](https://jarvislabs.ai/settings/api-keys).
 
 ## Managing GPU/CPU powered instances on Jarvislabs.ai
 

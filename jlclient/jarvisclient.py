@@ -1,7 +1,34 @@
-from .httpclient import post, get
+from .httpclient import post, get, get_base_url
 from jlclient import jarvisclient
 import time
 token = None
+DEFAULT_REGION = 'india-01'
+INDIA_REGIONS = {'india-01', 'india-noida-01'}
+
+
+def _resolve_region(instance_type, gpu_type, num_gpus):
+    try:
+        meta = get('misc/server_meta', jarvisclient.token)
+    except Exception:
+        return DEFAULT_REGION
+
+    if instance_type.lower() == 'cpu':
+        region = meta.get('cpu_meta', {}).get('region')
+        return region if region in INDIA_REGIONS else DEFAULT_REGION
+
+    candidates = [
+        server for server in meta.get('server_meta', [])
+        if server.get('gpu_type') == gpu_type and server.get('region') in INDIA_REGIONS
+    ]
+    if not candidates:
+        return DEFAULT_REGION
+
+    required = int(num_gpus or 1)
+    for server in candidates:
+        if int(server.get('num_free_devices') or 0) >= required:
+            return server.get('region')
+
+    return candidates[0].get('region', DEFAULT_REGION)
 
 class Instance(object):
     def __init__(self,
@@ -39,6 +66,7 @@ class Instance(object):
         self.endpoints = endpoints
         self.ssh_str = ssh_str
         self.status = status
+        self.region = DEFAULT_REGION
 
     def pause(self):
         '''
@@ -48,7 +76,8 @@ class Instance(object):
         '''
         pause_response = post({},f'misc/pause', 
                               jarvisclient.token,
-                              query_params={'machine_id':f'{self.machine_id}'})
+                              query_params={'machine_id':f'{self.machine_id}'},
+                              base_url=get_base_url(self.region))
         if pause_response['success']:
             self.status = 'Paused'
         return pause_response
@@ -62,7 +91,8 @@ class Instance(object):
         destroy_response = post({},
                                 f'misc/destroy',
                                 jarvisclient.token,
-                                query_params={'machine_id': self.machine_id})
+                                query_params={'machine_id': self.machine_id},
+                                base_url=get_base_url(self.region))
         if destroy_response['success']:
             self.status = 'Destroyed'
         return destroy_response
@@ -82,6 +112,7 @@ class Instance(object):
         self.machine_id=machine_details.get('machine_id')
         self.duration=machine_details.get('frequency')
         self.template=machine_details.get('framework')
+        self.region = machine_details.get('region', self.region)
 
     def resume(self,
                storage: int=None,
@@ -116,9 +147,9 @@ class Instance(object):
             resume_req['is_reserved'] = is_reserved if is_reserved else self.is_reserved
         
         try:
-            resume_resp = post(resume_req,f'templates/{self.template}/resume', jarvisclient.token)
+            resume_resp = post(resume_req,f'templates/{self.template}/resume', jarvisclient.token, base_url=get_base_url(self.region))
             self.machine_id = resume_resp['machine_id']
-            machine_details = Instance.get_instance_details(machine_id=self.machine_id)
+            machine_details = Instance.get_instance_details(machine_id=self.machine_id, region=self.region)
             self.update_instance_meta(req=resume_req,machine_details=machine_details)
             return self
         
@@ -128,13 +159,14 @@ class Instance(object):
         except Exception as e:
             return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
 
-    def get_instance_details(machine_id):
+    def get_instance_details(machine_id, region=DEFAULT_REGION):
         attempts = 0
         max_attempts = 5
 
         while attempts < max_attempts:
             machine_status_response = get('users/fetch',
-                                      jarvisclient.token)
+                                      jarvisclient.token,
+                                      base_url=get_base_url(region))
             
             matching_instances = [instance for instance in machine_status_response['instances'] 
                                 if instance.get('machine_id') == machine_id]
@@ -165,6 +197,9 @@ class Instance(object):
                http_ports : str = '',
                fs_id: str = None
                ):
+        resolved_region = _resolve_region(instance_type=instance_type,
+                                          gpu_type=gpu_type,
+                                          num_gpus=num_gpus)
         req_data = {'hdd':storage,
                     'name':name,
                     'script_id':script_id,
@@ -173,7 +208,8 @@ class Instance(object):
                     'is_reserved' :is_reserved,
                     'duration':duration,
                     'http_ports' :http_ports,
-                    'fs_id':fs_id}
+                    'fs_id':fs_id,
+                    'region': resolved_region}
         instance_params = {}
 
         if instance_type.lower() == 'gpu':
@@ -187,9 +223,9 @@ class Instance(object):
             instance_params['num_cpus'] = num_cpus
 
         try:
-            resp = post(req_data, f'templates/{template}/create', jarvisclient.token)
+            resp = post(req_data, f'templates/{template}/create', jarvisclient.token, base_url=get_base_url(resolved_region))
             machine_id = resp['machine_id']
-            machine_details = Instance.get_instance_details(machine_id=machine_id)
+            machine_details = Instance.get_instance_details(machine_id=machine_id, region=resolved_region)
             instance_params.update({
                 'hdd': storage,
                 'name': machine_details.get('name'),
@@ -203,6 +239,7 @@ class Instance(object):
         })
 
             instance = cls(**instance_params)
+            instance.region = machine_details.get('region', resolved_region)
             return instance
         
         except InstanceCreationException:
@@ -258,6 +295,7 @@ class User(object):
                             template=instance['framework'],
                             num_gpus=instance['num_gpus'],
                             )
+            inst.region = instance.get('region', DEFAULT_REGION)
             instances.append(inst)
         return instances
     
