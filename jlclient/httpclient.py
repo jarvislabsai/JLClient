@@ -7,6 +7,7 @@ url = "https://backendprod.jarvislabs.net/"
 REGION_API_URLS = {
     'india-01': "https://backendprod.jarvislabs.net/",
     'india-noida-01': "https://backendn.jarvislabs.net/",
+    'europe-01': "https://backendeu.jarvislabs.net/",
 }
 
 
