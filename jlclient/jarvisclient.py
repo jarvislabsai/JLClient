@@ -55,6 +55,26 @@ def _validate_europe_nebius_request(region, gpu_type, num_gpus, storage):
     if storage < EUROPE_MIN_STORAGE_GB:
         raise ValueError("For europe-01, storage must be at least 100 GB.")
 
+
+def _validate_template_region_request(template, instance_type, gpu_type, region):
+    if template != 'vm':
+        return
+
+    if (instance_type or '').lower() != 'gpu':
+        raise ValueError("template='vm' supports only GPU instances.")
+
+    if gpu_type not in EUROPE_GPU_TYPES:
+        raise ValueError("template='vm' supports only H100/H200.")
+
+    if region and region != EUROPE_REGION:
+        raise ValueError("template='vm' is supported only in europe-01.")
+
+
+def _extract_error_message(resp):
+    if isinstance(resp, dict):
+        return resp.get('detail') or resp.get('message') or resp.get('error') or str(resp)
+    return str(resp)
+
 class Instance(object):
     def __init__(self,
                  hdd: int,
@@ -105,7 +125,7 @@ class Instance(object):
                               jarvisclient.token,
                               query_params={'machine_id':f'{self.machine_id}'},
                               base_url=get_base_url(self.region))
-        if pause_response['success']:
+        if pause_response.get('success'):
             self.status = 'Paused'
         return pause_response
     
@@ -122,7 +142,7 @@ class Instance(object):
                                 jarvisclient.token,
                                 query_params={'machine_id': self.machine_id},
                                 base_url=get_base_url(self.region))
-        if destroy_response['success']:
+        if destroy_response.get('success'):
             self.status = 'Destroyed'
         return destroy_response
     
@@ -182,6 +202,8 @@ class Instance(object):
                                             storage=resume_req.get('hdd'))
 
             resume_resp = post(resume_req,f'templates/{self.template}/resume', jarvisclient.token, base_url=get_base_url(self.region))
+            if 'machine_id' not in resume_resp:
+                return {'error_message': _extract_error_message(resume_resp)}
             self.machine_id = resume_resp['machine_id']
             machine_details = Instance.get_instance_details(machine_id=self.machine_id, region=self.region)
             self.update_instance_meta(req=resume_req,machine_details=machine_details)
@@ -190,17 +212,16 @@ class Instance(object):
         except ValueError as e:
             return {'error_message': str(e)}
         
-        except InstanceCreationException:
-            return {'error_message': 'Failed to create the instance. Please reach to the team.'}
+        except InstanceCreationException as e:
+            return {'error_message': str(e)}
 
         except Exception as e:
             return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
 
     def get_instance_details(machine_id, region=DEFAULT_REGION):
-        attempts = 0
-        max_attempts = 5
+        max_attempts = 18
 
-        while attempts < max_attempts:
+        for _ in range(max_attempts):
             machine_status_response = get('users/fetch',
                                       jarvisclient.token,
                                       base_url=get_base_url(region))
@@ -208,14 +229,15 @@ class Instance(object):
             matching_instances = [instance for instance in machine_status_response['instances'] 
                                 if instance.get('machine_id') == machine_id]
             machine_details = matching_instances[0] if matching_instances else None
-            if machine_details['status'] == 'Running':
+            if machine_details and machine_details.get('status') == 'Running':
                 return machine_details
-            else:
-                time.sleep(10)
-                attempts+= 1
-        
-        if attempts == max_attempts and machine_details['status'] != 'Running':
-            raise InstanceCreationException
+            if machine_details and machine_details.get('status') == 'Failed':
+                raise InstanceCreationException("Instance creation failed.")
+            time.sleep(10)
+
+        raise InstanceCreationException(
+            f"Timed out while waiting for machine_id={machine_id} to reach Running."
+        )
 
     @classmethod
     def create(cls,
@@ -262,6 +284,10 @@ class Instance(object):
             instance_params['num_cpus'] = num_cpus
 
         try:
+            _validate_template_region_request(template=template,
+                                              instance_type=instance_type,
+                                              gpu_type=gpu_type,
+                                              region=resolved_region)
             if instance_type == 'gpu':
                 _validate_europe_nebius_request(region=resolved_region,
                                                 gpu_type=gpu_type,
@@ -271,6 +297,8 @@ class Instance(object):
                 raise ValueError("europe-01 supports only H100/H200 GPU requests.")
 
             resp = post(req_data, f'templates/{template}/create', jarvisclient.token, base_url=get_base_url(resolved_region))
+            if 'machine_id' not in resp:
+                return {'error_message': _extract_error_message(resp)}
             machine_id = resp['machine_id']
             machine_details = Instance.get_instance_details(machine_id=machine_id, region=resolved_region)
             instance_params.update({
@@ -292,8 +320,8 @@ class Instance(object):
         except ValueError as e:
             return {'error_message': str(e)}
         
-        except InstanceCreationException:
-            return {'error_message': 'Failed to create the instance. Please reach to the team.'}
+        except InstanceCreationException as e:
+            return {'error_message': str(e)}
 
         except Exception as e:
             return {'error_message' : "Some unexpected error had occured. Please reach to the team."}

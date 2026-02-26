@@ -113,6 +113,14 @@ For `europe-01`, JLClient enforces:
 - `num_gpus` must be `1` or `8`
 - `storage` must be `>= 100 GB`
 
+For `template='vm'`, JLClient enforces:
+
+- only GPU instances (no CPU vm create)
+- GPU must be `H100` or `H200`
+- region must be `europe-01`
+
+For India/Noida regions, GPU availability is dynamic and region-specific. If a requested GPU is not available in that region at launch time, backend availability errors are returned to the client.
+
 **Note:** Please contact us if you encounter any errors while launching the instance.
 
 ### Pause
