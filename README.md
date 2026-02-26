@@ -32,7 +32,7 @@ jarvisclient.token = '**************************duWRbO68IiMTkQKWi48'
 
 ```
 
-Generate a token from [here](https://cloud.jarvislabs.ai/settings#api).
+Generate a token from [here](https://jarvislabs.ai/settings/api-keys).
 
 ## Managing GPU/CPU powered instances on Jarvislabs.ai
 
@@ -42,13 +42,14 @@ Generate a token from [here](https://cloud.jarvislabs.ai/settings#api).
 | ------------------- | ---- | ------------------------------------------------------------------------- | ------------- |
 | instance_type       | str  | Choose between GPU or CPU.                                                | GPU           |
 | num_gpus / num_cpus | int  | Choose between 1 to 8 for GPU instance.                                   | 1             |
-| gpu_type            | str  | Choose from **A100**, **RTX6000Ada**, **A5000**, **A6000**, **RTX5000**.  | RTX5000       |
+| gpu_type            | str  | Choose from **A100**, **A100-80GB**, **RTX6000Ada**, **A5000**, **A6000**, **RTX5000**, **L4**, **H100**, **H200**. | RTX5000       |
 | template            | str  | Use `User.get_templates()` to get all templates.                          | pytorch       |
 | script_id           | str  | Use `User.get_scripts()` to get all script ids and pass it.                                     | None          |
 | is_reserved         | bool | True refers to an on-demand instance. False refers to a spot instance.    | True          |
 | duration            | str  | Choose hour, week, and month. The pricing changes based on the duration.. | hour          |
 | http_ports          | str  | As per your requirement, you can specify the ports.                       | None          |
 | storage             | int  | Choose between 20GB to 2TB.                                               | 20            |
+| region              | str  | Optional. Choose from **india-01**, **india-noida-01**, **europe-01**.   | auto-resolved |
 
 ```python
 # CPU Instance Example
@@ -68,6 +69,17 @@ instance: Instance = Instance.create('GPU',
                             storage=50,
                             template='pytorch',
                             name='gpu instance')
+
+
+# Europe H200 Example
+
+instance: Instance = Instance.create('GPU',
+                            gpu_type='H200',
+                            num_gpus=1,
+                            storage=100,
+                            template='pytorch',
+                            region='europe-01',
+                            name='europe h200 instance')
 
 
 ```
@@ -92,6 +104,22 @@ This should return the Instance object, which includes the following attributes
 - status
 
 If the Instance object isn't returned, an error dictionary will be provided.
+
+If `region` is not passed, JLClient auto-resolves the best region from server metadata.
+
+For `europe-01`, JLClient enforces:
+
+- GPU type must be `H100` or `H200`
+- `num_gpus` must be `1` or `8`
+- `storage` must be `>= 100 GB`
+
+For `template='vm'`, JLClient enforces:
+
+- only GPU instances (no CPU vm create)
+- GPU must be `H100` or `H200`
+- region must be `europe-01`
+
+For India/Noida regions, GPU availability is dynamic and region-specific. If a requested GPU is not available in that region at launch time, backend availability errors are returned to the client.
 
 **Note:** Please contact us if you encounter any errors while launching the instance.
 

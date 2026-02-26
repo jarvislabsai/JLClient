@@ -4,16 +4,27 @@ import certifi
 import json
 import urllib.parse
 url = "https://backendprod.jarvislabs.net/"
+REGION_API_URLS = {
+    'india-01': "https://backendprod.jarvislabs.net/",
+    'india-noida-01': "https://backendn.jarvislabs.net/",
+    'europe-01': "https://backendeu.jarvislabs.net/",
+}
+
+
+def get_base_url(region=None):
+    if region is None:
+        return url
+    return REGION_API_URLS.get(region, url)
 
 http = urllib3.PoolManager(
     cert_reqs="CERT_REQUIRED",
     ca_certs=certifi.where()
 )
 
-def post(data, func, token, query_params=None, no_template = None):
+def post(data, func, token, query_params=None, no_template = None, base_url=None):
     encoded_body = json.dumps(data)
     try:
-        full_url = url + func
+        full_url = (base_url if base_url else url) + func
         if query_params:
                 full_url += "?" + urllib.parse.urlencode(query_params)
         r = http.request('POST', full_url,
@@ -29,9 +40,9 @@ def post(data, func, token, query_params=None, no_template = None):
         print(e)
     return json.loads(r.data)
 
-def get(func, token, data=None):
+def get(func, token, data=None, base_url=None):
     try:
-        r = http.request('GET', url+func,
+        r = http.request('GET', (base_url if base_url else url)+func,
                          headers = {
                                     'Authorization': f'Bearer {token}',
                                     'Content-Type': 'application/json'
@@ -43,7 +54,6 @@ def get(func, token, data=None):
         print(e)
     return json.loads(r.data)
 
-def post_files(files, func):
-    r = requests.post(url+func, files=files)
+def post_files(files, func, base_url=None):
+    r = requests.post((base_url if base_url else url)+func, files=files)
     return r.text
-
