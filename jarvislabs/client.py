@@ -236,6 +236,8 @@ class Instances:
         fs_id: int | None = None,
     ) -> Instance:
         instance = _get_instance(self._t, machine_id)
+        if instance.status != "Paused":
+            raise ValidationError(f"Can only resume a Paused instance (current status: {instance.status})")
         region = instance.region or DEFAULT_REGION
         base_url = _region_url(region)
 
