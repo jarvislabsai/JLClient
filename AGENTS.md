@@ -10,6 +10,10 @@
 - Do not over-engineer. Keep it simple.
 - Do not account for backward compatibility for major changes and refactors unless asked.
 
+## Formatting
+
+- Ruff is configured in `pyproject.toml`. Run `uv run ruff format . && uv run ruff check --fix .` after major code changes or before committing.
+
 ## Tooling
 
 - Use `uv` for everything: `uv run`, `uv pip`, `uv venv`, `uv build`

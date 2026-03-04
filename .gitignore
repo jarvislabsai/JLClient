@@ -133,3 +133,4 @@ dmypy.json
 
 # Internal research/plans (not public)
 research/
+.claude/

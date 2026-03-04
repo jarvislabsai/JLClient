@@ -22,7 +22,7 @@ class InsufficientBalanceError(JarvislabsError):
 
 
 class ValidationError(JarvislabsError):
-    """Client-side validation failure (e.g. bad GPU type, Europe constraints)."""
+    """Client-side validation failure."""
 
 
 class APIError(JarvislabsError):

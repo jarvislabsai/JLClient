@@ -51,7 +51,7 @@ class Transport:
         json: dict | None = None,
         params: dict | None = None,
         base_url: str | None = None,
-    ) -> dict:
+    ) -> dict | list:
         """Send an HTTP request with retries on transient failures."""
         url = (base_url or self._base_url).rstrip("/") + "/" + path.lstrip("/")
 
@@ -100,8 +100,10 @@ class Transport:
         self._client.close()
 
 
-def _extract_error_message(data: dict) -> str:
+def _extract_error_message(data: dict | list) -> str:
     """Handle {"message": ...} vs {"detail": ...} vs {"error": ...} response shapes."""
+    if not isinstance(data, dict):
+        return str(data) or "Unknown error"
     detail = data.get("detail")
     if isinstance(detail, list):
         # FastAPI RequestValidationError: [{"loc": [...], "msg": "...", "type": "..."}]

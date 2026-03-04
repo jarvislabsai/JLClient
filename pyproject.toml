@@ -43,4 +43,23 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 120
+extend-exclude = ["jlclient"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "UP", "SIM", "RUF", "T20", "TC"]
+ignore = ["E501", "SIM108"]
+unfixable = ["T201"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["jarvislabs"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.4",
+]

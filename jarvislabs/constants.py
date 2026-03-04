@@ -41,8 +41,17 @@ DEFAULT_INSTANCE_NAME = "Name me"
 
 # ── GPU types (for validation / help text) ───────────────────────────────────
 
-GPU_TYPES: frozenset[str] = frozenset({
-    "RTX5000", "A5000", "A5000Pro", "A6000",
-    "A100", "A100-80GB", "RTX6000Ada",
-    "H100", "H200", "L4",
-})
+GPU_TYPES: frozenset[str] = frozenset(
+    {
+        "RTX5000",
+        "A5000",
+        "A5000Pro",
+        "A6000",
+        "A100",
+        "A100-80GB",
+        "RTX6000Ada",
+        "H100",
+        "H200",
+        "L4",
+    }
+)

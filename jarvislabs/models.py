@@ -10,7 +10,6 @@ from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
-
 # ── Account ──────────────────────────────────────────────────────────────────
 
 
@@ -69,14 +68,8 @@ class ServerMetaGPU(BaseModel):
         return int(v)
 
 
-class ServerMetaCPU(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    region: str | None = None
-
-
 class ServerMetaResponse(BaseModel):
     server_meta: list[ServerMetaGPU] = Field(default_factory=list)
-    cpu_meta: ServerMetaCPU = Field(default_factory=ServerMetaCPU)
 
 
 # ── Instance ─────────────────────────────────────────────────────────────────
@@ -98,19 +91,13 @@ class Instance(BaseModel):
     fs_id: int | None = None
     num_gpus: int | None = None
     url: str | None = None
-    ssh_command: str | None = Field(
-        default=None, validation_alias=AliasChoices("ssh_command", "ssh_str")
-    )
+    ssh_command: str | None = Field(default=None, validation_alias=AliasChoices("ssh_command", "ssh_str"))
     status: str
-    paused_image_size: float | None = Field(
-        default=None, validation_alias=AliasChoices("paused_image_size", "v_size")
-    )
+    paused_image_size: float | None = Field(default=None, validation_alias=AliasChoices("paused_image_size", "v_size"))
     endpoints: list[str] | None = None
     name: str | None = Field(default=None, validation_alias=AliasChoices("name", "instance_name"))
     is_reserved: bool | None = None
-    billing_frequency: str | None = Field(
-        default=None, validation_alias=AliasChoices("billing_frequency", "frequency")
-    )
+    billing_frequency: str | None = Field(default=None, validation_alias=AliasChoices("billing_frequency", "frequency"))
     vs_url: str | None = None
     deployment_id: str | None = None
     user_id: str | None = None
@@ -142,7 +129,3 @@ class StatusResponse(BaseModel):
     status: str
     error: str | None = None
     code: int | str | None = None
-
-
-class CreateResponse(BaseModel):
-    machine_id: int
