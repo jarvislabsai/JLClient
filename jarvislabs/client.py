@@ -29,9 +29,11 @@ from jarvislabs.models import (
     Instance,
     InstanceListResponse,
     ResourceMetrics,
+    ServerMetaGPU,
     ServerMetaResponse,
     SSHKey,
     StatusResponse,
+    Template,
     UserInfo,
 )
 from jarvislabs.transport import Transport
@@ -79,6 +81,16 @@ class Account:
     def resource_metrics(self) -> ResourceMetrics:
         resp = self._t.request("GET", "misc/resource_metrics")
         return ResourceMetrics(**resp)
+
+    def templates(self) -> list[Template]:
+        resp = self._t.request("GET", "misc/frameworks")
+        return [Template(**t) for t in resp.get("frameworks", [])]
+
+    def gpu_availability(self) -> list[ServerMetaGPU]:
+        """GPU types, pricing, and availability across regions."""
+        resp = self._t.request("GET", "misc/server_meta")
+        meta = ServerMetaResponse(**resp)
+        return meta.server_meta
 
 
 # ── SSH Keys ─────────────────────────────────────────────────────────────────
@@ -133,7 +145,11 @@ class Instances:
         name: str = "Name me",
         region: str | None = None,
         disk_type: str = "ssd",
+        is_reserved: bool = True,
         http_ports: str = "",
+        script_id: str | None = None,
+        script_args: str = "",
+        fs_id: int | None = None,
         arguments: str = "",
     ) -> Instance:
         # Resolve region if not explicitly provided
@@ -163,12 +179,13 @@ class Instances:
             "hdd": storage,
             "region": region,
             "name": name,
-            "is_reserved": True,
+            "is_reserved": is_reserved,
             "duration": "hour",
             "disk_type": disk_type,
             "http_ports": http_ports,
-            "script_id": None,
-            "script_args": "",
+            "script_id": script_id,
+            "script_args": script_args,
+            "fs_id": fs_id,
             "arguments": arguments,
         }
 
@@ -216,6 +233,10 @@ class Instances:
         num_gpus: int | None = None,
         storage: int | None = None,
         name: str | None = None,
+        is_reserved: bool | None = None,
+        script_id: str | None = None,
+        script_args: str | None = None,
+        fs_id: int | None = None,
     ) -> Instance:
         instance = _get_instance(self._t, machine_id)
         region = instance.region or DEFAULT_REGION
@@ -232,12 +253,13 @@ class Instances:
             "machine_id": machine_id,
             "gpu_type": gpu_type or instance.gpu_type,
             "num_gpus": num_gpus or instance.num_gpus,
-            "is_reserved": instance.is_reserved,
+            "is_reserved": is_reserved if is_reserved is not None else instance.is_reserved,
             "hdd": storage or instance.storage_gb,
             "name": name or instance.name,
             "duration": "hour",
-            "script_id": None,
-            "script_args": "",
+            "script_id": script_id,
+            "script_args": script_args or "",
+            "fs_id": fs_id or instance.fs_id,
             "arguments": "",
         }
 
@@ -373,8 +395,7 @@ def _fetch_instances(transport: Transport) -> list[Instance]:
 
 def _get_instance(transport: Transport, machine_id: int) -> Instance:
     """Fetch a specific instance by machine_id, or raise NotFoundError."""
-    instances = _fetch_instances(transport)
-    for inst in instances:
-        if inst.machine_id == machine_id:
-            return inst
-    raise NotFoundError(f"Instance {machine_id} not found")
+    resp = transport.request("GET", f"users/fetch/{machine_id}")
+    if not _normalize_success(resp):
+        raise NotFoundError(f"Instance {machine_id} not found")
+    return Instance(**resp["instance"])

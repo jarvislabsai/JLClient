@@ -50,7 +50,20 @@ class SSHKey(BaseModel):
     user_id: str | None = None
 
 
-# ── Server Meta (for auto-routing) ──────────────────────────────────────────
+# ── Templates ─────────────────────────────────────────────────────────────────
+
+
+class Template(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    title: str
+    description: str | None = None
+    category: str | None = None
+    versions: str | None = None
+
+
+# ── Server Meta (for auto-routing + GPU availability) ─────────────────────────
 
 
 class ServerMetaGPU(BaseModel):
@@ -59,6 +72,9 @@ class ServerMetaGPU(BaseModel):
     gpu_type: str
     region: str
     num_free_devices: int = 0
+    price_per_hour: float | None = None
+    vram: str | None = None
+    arc: str | None = None
 
     @field_validator("num_free_devices", mode="before")
     @classmethod
