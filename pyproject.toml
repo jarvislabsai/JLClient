@@ -51,6 +51,9 @@ select = ["E", "F", "I", "B", "C4", "UP", "SIM", "RUF", "T20", "TC"]
 ignore = ["E501", "SIM108"]
 unfixable = ["T201"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["T201"]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 known-first-party = ["jarvislabs"]

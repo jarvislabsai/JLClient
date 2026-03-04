@@ -20,6 +20,7 @@ from jarvislabs.constants import (
     EUROPE_MIN_STORAGE_GB,
     EUROPE_POLL_TIMEOUT_S,
     EUROPE_REGION,
+    FETCH_RETRY_INTERVAL_S,
     POLL_INTERVAL_S,
     REGION_URLS,
 )
@@ -152,7 +153,6 @@ class Instances:
         fs_id: int | None = None,
         arguments: str = "",
     ) -> Instance:
-        # Resolve region if not explicitly provided
         if region is None:
             region = _resolve_region(self._t, gpu_type=gpu_type, num_gpus=num_gpus)
 
@@ -160,7 +160,6 @@ class Instances:
         if region == EUROPE_REGION and storage < EUROPE_MIN_STORAGE_GB:
             storage = EUROPE_MIN_STORAGE_GB
 
-        # Validation
         if not gpu_type:
             raise ValidationError("gpu_type is required (e.g. 'A100', 'H100', 'RTX5000')")
         if name and len(name) > 40:
@@ -172,7 +171,6 @@ class Instances:
         if template == "vm":
             _preflight_vm(gpu_type, region, self._ssh_keys.list())
 
-        # Build request payload
         payload: dict = {
             "gpu_type": gpu_type,
             "num_gpus": num_gpus,
@@ -189,7 +187,6 @@ class Instances:
             "arguments": arguments,
         }
 
-        # Send create request to the resolved region
         base_url = _region_url(region)
         resp = self._t.request(
             "POST",
@@ -204,11 +201,11 @@ class Instances:
 
         # Poll until running, then fetch full instance details
         _poll_until_running(self._t, machine_id, region)
-        return _get_instance(self._t, machine_id)
+        return _get_instance(self._t, machine_id, retries=3)
 
     def pause(self, machine_id: int) -> bool:
         instance = _get_instance(self._t, machine_id)
-        base_url = _region_url(instance.region)
+        base_url = _region_url(instance.region or DEFAULT_REGION)
 
         if instance.template == "vm":
             endpoint = "templates/vm/pause"
@@ -275,11 +272,11 @@ class Instances:
             raise APIError(0, f"Resume failed: {resp}")
 
         _poll_until_running(self._t, mid, region)
-        return _get_instance(self._t, mid)
+        return _get_instance(self._t, mid, retries=3)
 
     def destroy(self, machine_id: int) -> bool:
         instance = _get_instance(self._t, machine_id)
-        base_url = _region_url(instance.region)
+        base_url = _region_url(instance.region or DEFAULT_REGION)
 
         if instance.template == "vm":
             endpoint = "templates/vm/destroy"
@@ -330,7 +327,6 @@ def _resolve_region(transport: Transport, *, gpu_type: str | None, num_gpus: int
 
 
 def _validate_europe(gpu_type: str, num_gpus: int, storage_gb: int) -> None:
-    """Raise ValidationError if europe-01 constraints are violated."""
     if gpu_type not in EUROPE_GPU_TYPES:
         raise ValidationError(f"europe-01 supports only {sorted(EUROPE_GPU_TYPES)} GPUs")
     if num_gpus not in EUROPE_GPU_COUNTS:
@@ -340,7 +336,6 @@ def _validate_europe(gpu_type: str, num_gpus: int, storage_gb: int) -> None:
 
 
 def _preflight_vm(gpu_type: str, region: str, ssh_keys: list[SSHKey]) -> None:
-    """Validate VM create constraints."""
     if gpu_type not in EUROPE_GPU_TYPES:
         raise ValidationError("VM template supports only H100/H200 GPUs")
     if region != EUROPE_REGION:
@@ -352,7 +347,6 @@ def _preflight_vm(gpu_type: str, region: str, ssh_keys: list[SSHKey]) -> None:
 
 
 def _region_url(region: str | None) -> str:
-    """Get the backend URL for a region, falling back to default."""
     return REGION_URLS.get(region or DEFAULT_REGION, REGION_URLS[DEFAULT_REGION])
 
 
@@ -393,9 +387,20 @@ def _fetch_instances(transport: Transport) -> list[Instance]:
     return parsed.instances
 
 
-def _get_instance(transport: Transport, machine_id: int) -> Instance:
-    """Fetch a specific instance by machine_id, or raise NotFoundError."""
-    resp = transport.request("GET", f"users/fetch/{machine_id}")
-    if not _normalize_success(resp):
-        raise NotFoundError(f"Instance {machine_id} not found")
-    return Instance(**resp["instance"])
+def _get_instance(transport: Transport, machine_id: int, *, retries: int = 0) -> Instance:
+    """Fetch a specific instance by machine_id, or raise NotFoundError.
+
+    retries > 0 is used after create/resume to handle DB replication lag —
+    the instance exists but replicas may not have it yet.
+    """
+    for attempt in range(retries + 1):
+        try:
+            resp = transport.request("GET", f"users/fetch/{machine_id}")
+            if not _normalize_success(resp):
+                raise NotFoundError(f"Instance {machine_id} not found")
+            return Instance(**resp["instance"])
+        except NotFoundError:
+            if attempt < retries:
+                time.sleep(FETCH_RETRY_INTERVAL_S)
+                continue
+            raise

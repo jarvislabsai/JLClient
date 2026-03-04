@@ -55,18 +55,22 @@ class Transport:
         """Send an HTTP request with retries on transient failures."""
         url = (base_url or self._base_url).rstrip("/") + "/" + path.lstrip("/")
 
+        # POST/PUT/DELETE are not idempotent — retrying after timeout can cause
+        # double operations (e.g. pause already started → retry → "Invalid Machine ID")
+        safe_to_retry = method.upper() in {"GET", "HEAD", "OPTIONS"}
+
         for attempt in range(MAX_RETRIES + 1):
             try:
                 resp = self._client.request(method, url, json=json, params=params)
             except (httpx.TimeoutException, httpx.ConnectError) as exc:
-                if attempt < MAX_RETRIES:
+                if safe_to_retry and attempt < MAX_RETRIES:
                     time.sleep(2**attempt)
                     continue
                 label = "timed out" if isinstance(exc, httpx.TimeoutException) else "Connection failed"
-                raise APIError(0, f"Request {label} after {MAX_RETRIES + 1} attempts") from exc
+                raise APIError(0, f"Request {label}: {method} {path}") from exc
 
-            # Retry on transient HTTP errors (429, 5xx)
-            if resp.status_code in RETRY_STATUS_CODES and attempt < MAX_RETRIES:
+            # Retry on transient HTTP errors (429, 5xx) — only for idempotent methods
+            if resp.status_code in RETRY_STATUS_CODES and safe_to_retry and attempt < MAX_RETRIES:
                 time.sleep(2**attempt)  # 1s, 2s, 4s
                 continue
 
@@ -86,7 +90,7 @@ class Transport:
         except Exception:
             data = {}
 
-        msg = _extract_error_message(data)
+        msg = _extract_error_message(data) or f"HTTP {resp.status_code}"
 
         if resp.status_code == 401:
             raise AuthError(msg)

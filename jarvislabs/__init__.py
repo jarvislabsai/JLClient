@@ -1,2 +1,21 @@
 # Public API — this is what `from jarvislabs import Client` resolves to.
-# Wired up in Phase 2 after client.py is built.
+
+from jarvislabs.client import Client
+from jarvislabs.exceptions import (
+    APIError,
+    AuthError,
+    InsufficientBalanceError,
+    JarvislabsError,
+    NotFoundError,
+    ValidationError,
+)
+
+__all__ = [
+    "APIError",
+    "AuthError",
+    "Client",
+    "InsufficientBalanceError",
+    "JarvislabsError",
+    "NotFoundError",
+    "ValidationError",
+]

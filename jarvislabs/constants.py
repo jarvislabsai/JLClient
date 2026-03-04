@@ -26,8 +26,9 @@ EUROPE_POLL_TIMEOUT_S = 300  # 5 min — Nebius is slower
 
 DEFAULT_POLL_TIMEOUT_S = 180  # 3 min for India regions
 POLL_INTERVAL_S = 10
+FETCH_RETRY_INTERVAL_S = 2  # DB replication lag retry — much shorter than poll interval
 HTTP_TIMEOUT_CONNECT_S = 10
-HTTP_TIMEOUT_READ_S = 30
+HTTP_TIMEOUT_READ_S = 120  # V2/Nebius pause/destroy are synchronous and slow
 MAX_RETRIES = 3
 RETRY_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
