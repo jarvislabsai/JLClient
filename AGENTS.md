@@ -17,3 +17,7 @@
 ## Security
 
 - Never commit secrets, tokens, or .env files
+
+## Git
+- Do not commit changes unless you are asked to do so.
+- Do not push changes to the main branch unless you are asked to do so.
