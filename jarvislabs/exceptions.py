@@ -17,6 +17,10 @@ class NotFoundError(JarvislabsError):
     """404 — instance, SSH key, or resource not found."""
 
 
+class InsufficientBalanceError(JarvislabsError):
+    """403 — not enough balance to perform the action."""
+
+
 class ValidationError(JarvislabsError):
     """Client-side validation failure (e.g. bad GPU type, Europe constraints)."""
 
