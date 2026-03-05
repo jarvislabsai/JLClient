@@ -62,7 +62,7 @@ class Transport:
         for attempt in range(MAX_RETRIES + 1):
             try:
                 resp = self._client.request(method, url, json=json, params=params)
-            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            except httpx.HTTPError as exc:
                 if safe_to_retry and attempt < MAX_RETRIES:
                     time.sleep(2**attempt)
                     continue
@@ -111,5 +111,5 @@ def _extract_error_message(data: dict | list) -> str:
     detail = data.get("detail")
     if isinstance(detail, list):
         # FastAPI RequestValidationError: [{"loc": [...], "msg": "...", "type": "..."}]
-        return "; ".join(item.get("msg", "") for item in detail)
+        return "; ".join(item.get("msg", "") if isinstance(item, dict) else str(item) for item in detail)
     return data.get("message") or data.get("error") or detail or "Unknown error"

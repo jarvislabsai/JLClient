@@ -34,11 +34,12 @@ def login(
 
     try:
         from jarvislabs.client import Client
+        from jarvislabs.exceptions import JarvislabsError
 
         with render.spinner("Authenticating..."):
             client = Client(api_key=token)
             info = client.account.user_info()
-    except Exception as e:
+    except JarvislabsError as e:
         render.die(f"Invalid token: {e}")
 
     config.setdefault("auth", {})["token"] = token

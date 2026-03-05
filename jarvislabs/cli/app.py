@@ -23,7 +23,6 @@ def _global_flags(
     ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompts."),
-    verbose: bool = typer.Option(False, "--verbose", help="Show HTTP request details."),
     token: str | None = typer.Option(None, "--token", envvar="JL_API_KEY", metavar="API_KEY", help="API key override."),
     version: bool = typer.Option(False, "--version", help="Show version and exit."),
 ) -> None:
@@ -35,7 +34,6 @@ def _global_flags(
 
     state.json_output = json_output
     state.yes = yes
-    state.verbose = verbose
     state.token = token
 
     # If no subcommand was given (and --version wasn't handled above), show help
@@ -48,10 +46,11 @@ def get_client():
     """Create a Client using the resolved token. Called lazily by commands that need it."""
     from jarvislabs.cli.render import die
     from jarvislabs.client import Client
+    from jarvislabs.exceptions import JarvislabsError
 
     try:
         return Client(api_key=state.token)
-    except Exception as e:
+    except JarvislabsError as e:
         die(str(e))
 
 

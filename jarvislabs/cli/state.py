@@ -3,5 +3,4 @@
 
 json_output: bool = False
 yes: bool = False
-verbose: bool = False
 token: str | None = None

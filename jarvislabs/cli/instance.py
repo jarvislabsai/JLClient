@@ -88,6 +88,11 @@ def instance_pause(
     client = get_client()
     with render.spinner("Pausing instance..."):
         client.instances.pause(machine_id)
+
+    if state.json_output:
+        render.print_json({"success": True, "machine_id": machine_id})
+        return
+
     render.success(f"Instance {machine_id} paused.")
 
 
@@ -125,6 +130,11 @@ def instance_destroy(
     client = get_client()
     with render.spinner("Destroying instance..."):
         client.instances.destroy(machine_id)
+
+    if state.json_output:
+        render.print_json({"success": True, "machine_id": machine_id})
+        return
+
     render.success(f"Instance {machine_id} destroyed.")
 
 
@@ -141,10 +151,19 @@ def instance_ssh(
     if not inst.ssh_command:
         render.die(f"Instance {machine_id} has no SSH command (status: {inst.status}).")
 
-    if print_command or state.json_output:
+    if print_command:
         render.stdout_console.print(inst.ssh_command)
         return
 
-    parts = inst.ssh_command.split()
+    if state.json_output:
+        render.print_json({"ssh_command": inst.ssh_command})
+        return
+
+    import shlex
+
+    parts = shlex.split(inst.ssh_command)
+    if not parts or parts[0] != "ssh":
+        render.die(f"Unexpected SSH command format: {inst.ssh_command}")
+
     render.info(f"Connecting to {machine_id}...")
     raise SystemExit(subprocess.call(parts))

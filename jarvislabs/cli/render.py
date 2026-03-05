@@ -253,7 +253,13 @@ def confirm(msg: str, *, skip: bool = False) -> bool:
 
 
 def spinner(msg: str):
-    """Rich spinner context manager for wrapping API calls."""
+    """Rich spinner context manager for wrapping API calls. Suppressed in --json mode."""
+    from contextlib import nullcontext
+
+    from jarvislabs.cli import state
+
+    if state.json_output:
+        return nullcontext()
     return console.status(f"[bold]{msg}[/bold]", spinner="dots")
 
 

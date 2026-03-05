@@ -158,17 +158,17 @@ class Instances:
         fs_id: int | None = None,
         arguments: str = "",
     ) -> Instance:
+        if not gpu_type:
+            raise ValidationError("gpu_type is required (e.g. 'A100', 'H100', 'RTX5000')")
+        if name and len(name) > 40:
+            raise ValidationError("Instance name must be 40 characters or fewer")
+
         if region is None:
             region = _resolve_region(self._t, gpu_type=gpu_type, num_gpus=num_gpus)
 
         # Auto-bump storage for Europe
         if region == EUROPE_REGION and storage < EUROPE_MIN_STORAGE_GB:
             storage = EUROPE_MIN_STORAGE_GB
-
-        if not gpu_type:
-            raise ValidationError("gpu_type is required (e.g. 'A100', 'H100', 'RTX5000')")
-        if name and len(name) > 40:
-            raise ValidationError("Instance name must be 40 characters or fewer")
 
         if region == EUROPE_REGION:
             _validate_europe(gpu_type, num_gpus, storage)
@@ -390,6 +390,8 @@ def _poll_until_running(transport: Transport, machine_id: int, region: str) -> N
 def _fetch_instances(transport: Transport) -> list[Instance]:
     """Fetch all instances from the default region (shared DB)."""
     resp = transport.request("GET", "users/fetch")
+    if not _normalize_success(resp):
+        raise APIError(0, f"Failed to fetch instances: {resp}")
     parsed = InstanceListResponse(**resp)
     return parsed.instances
 
@@ -405,7 +407,10 @@ def _get_instance(transport: Transport, machine_id: int, *, retries: int = 0) ->
             resp = transport.request("GET", f"users/fetch/{machine_id}")
             if not _normalize_success(resp):
                 raise NotFoundError(f"Instance {machine_id} not found")
-            return Instance(**resp["instance"])
+            instance_data = resp.get("instance")
+            if not instance_data:
+                raise NotFoundError(f"Instance {machine_id} not found")
+            return Instance(**instance_data)
         except NotFoundError:
             if attempt < retries:
                 time.sleep(FETCH_RETRY_INTERVAL_S)
