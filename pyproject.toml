@@ -54,6 +54,9 @@ unfixable = ["T201"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T201", "RUF012"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.ruff.lint.isort]
 combine-as-imports = true
 known-first-party = ["jarvislabs"]

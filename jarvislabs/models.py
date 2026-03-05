@@ -75,6 +75,8 @@ class ServerMetaGPU(BaseModel):
     price_per_hour: float | None = None
     vram: str | None = None
     arc: str | None = None
+    cpus_per_gpu: int | None = None
+    ram_per_gpu: int | None = None
 
     @field_validator("num_free_devices", mode="before")
     @classmethod

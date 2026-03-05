@@ -93,6 +93,11 @@ class Account:
         meta = ServerMetaResponse(**resp)
         return meta.server_meta
 
+    def currency(self) -> str:
+        """Return 'INR' or 'USD' based on user's payment location."""
+        resp = self._t.request("GET", "misc/")
+        return "INR" if _normalize_success(resp) else "USD"
+
 
 # ── SSH Keys ─────────────────────────────────────────────────────────────────
 
