@@ -127,6 +127,11 @@ def test_instance_resume_prompt_includes_script_changes(monkeypatch):
 @pytest.mark.parametrize(
     ("fn", "args", "expected"),
     [
+        (
+            instance.instance_rename,
+            {"machine_id": 5, "name": "new-name"},
+            "Rename instance 5 to 'new-name'?",
+        ),
         (instance.instance_pause, {"machine_id": 7}, "Pause instance 7?"),
         (instance.instance_destroy, {"machine_id": 9}, "Destroy instance 9? This cannot be undone."),
     ],

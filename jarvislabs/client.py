@@ -342,6 +342,21 @@ class Instances:
             raise APIError(0, f"Failed to destroy instance: {_backend_msg(resp)}")
         return True
 
+    def rename(self, machine_id: int, name: str) -> bool:
+        if not name or not name.strip():
+            raise ValidationError("Instance name cannot be empty")
+        if len(name) > 40:
+            raise ValidationError("Instance name must be 40 characters or fewer")
+
+        resp = self._t.request(
+            "PUT",
+            "machines/machine_name",
+            params={"machine_id": machine_id, "machine_name": name},
+        )
+        if isinstance(resp, dict) and ("success" in resp or "sucess" in resp) and not _normalize_success(resp):
+            raise APIError(0, f"Failed to rename instance: {_backend_msg(resp)}")
+        return True
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

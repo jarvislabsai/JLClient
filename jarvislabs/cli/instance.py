@@ -1,4 +1,4 @@
-"""Instance lifecycle commands — list, create, pause, resume, destroy, get, ssh."""
+"""Instance lifecycle commands — list, create, rename, pause, resume, destroy, get, ssh."""
 
 from __future__ import annotations
 
@@ -83,6 +83,26 @@ def instance_create(
 
     render.success(f"Instance {inst.machine_id} is Running.")
     render.instance_detail(inst, client.account.currency())
+
+
+@instance_app.command("rename")
+def instance_rename(
+    machine_id: int = typer.Argument(..., help="Instance ID to rename."),
+    name: str = typer.Option(..., "--name", "-n", help="New instance name."),
+) -> None:
+    """Rename an instance."""
+    if not render.confirm(f"Rename instance {machine_id} to {name!r}?", skip=state.yes):
+        raise typer.Exit()
+
+    client = get_client()
+    with render.spinner("Renaming instance..."):
+        client.instances.rename(machine_id, name)
+
+    if state.json_output:
+        render.print_json({"success": True, "machine_id": machine_id, "name": name})
+        return
+
+    render.success(f"Instance {machine_id} renamed to {name!r}.")
 
 
 @instance_app.command("pause")

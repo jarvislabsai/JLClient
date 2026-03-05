@@ -459,3 +459,23 @@ class TestResumePayload:
         mock_get.return_value = running
         with pytest.raises(ValidationError, match="Paused"):
             _make_instances(mock_transport).resume(10)
+
+
+class TestRenameInstance:
+    def test_rename_calls_machine_name_endpoint(self, mock_transport):
+        mock_transport.request.return_value = {"success": True}
+        _make_instances(mock_transport).rename(42, "renamed")
+
+        mock_transport.request.assert_called_with(
+            "PUT",
+            "machines/machine_name",
+            params={"machine_id": 42, "machine_name": "renamed"},
+        )
+
+    def test_rename_rejects_empty_name(self, mock_transport):
+        with pytest.raises(ValidationError, match="cannot be empty"):
+            _make_instances(mock_transport).rename(42, "  ")
+
+    def test_rename_rejects_long_name(self, mock_transport):
+        with pytest.raises(ValidationError, match="40 characters or fewer"):
+            _make_instances(mock_transport).rename(42, "x" * 41)
