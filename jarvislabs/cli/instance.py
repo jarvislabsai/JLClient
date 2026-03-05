@@ -1,4 +1,4 @@
-"""Instance lifecycle commands — ls, create, pause, resume, destroy, get, ssh."""
+"""Instance lifecycle commands — list, create, pause, resume, destroy, get, ssh."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ instance_app = typer.Typer(name="instance", help="Manage GPU instances.")
 app.add_typer(instance_app, rich_help_panel="Infrastructure")
 
 
-@instance_app.command("ls")
-def instance_ls() -> None:
+@instance_app.command("list")
+def instance_list() -> None:
     """List all instances."""
     client = get_client()
     with render.spinner("Fetching instances..."):
@@ -52,21 +52,29 @@ def instance_create(
     storage: int = typer.Option(40, "--storage", "-s", help="Storage in GB."),
     name: str = typer.Option("Name me", "--name", "-n", help="Instance name."),
     num_gpus: int = typer.Option(1, "--num-gpus", help="Number of GPUs."),
-    region: str | None = typer.Option(None, "--region", help="Region (auto-detected if omitted)."),
+    script_id: str | None = typer.Option(None, "--script-id", help="Startup script ID to run on launch."),
+    script_args: str = typer.Option("", "--script-args", help="Arguments passed to startup script."),
 ) -> None:
     """Create a new GPU instance."""
-    if not render.confirm(f"Create {num_gpus}x {gpu} instance?", skip=state.yes):
-        raise typer.Abort()
+    details = [f"gpu={num_gpus}x {gpu}", f"template={template}", f"storage={storage}GB", f"name={name!r}"]
+    if script_id:
+        details.append(f"script_id={script_id}")
+    if script_args:
+        details.append(f"script_args={script_args!r}")
+    prompt = f"Create instance ({', '.join(details)})?"
+    if not render.confirm(prompt, skip=state.yes):
+        raise typer.Exit()
 
     client = get_client()
-    with render.spinner("Creating instance — this may take a few minutes..."):
+    with render.spinner("Creating instance — this may take a few seconds..."):
         inst = client.instances.create(
             gpu_type=gpu,
             num_gpus=num_gpus,
             template=template,
             storage=storage,
             name=name,
-            region=region,
+            script_id=script_id,
+            script_args=script_args,
         )
 
     if state.json_output:
@@ -83,7 +91,7 @@ def instance_pause(
 ) -> None:
     """Pause a running instance."""
     if not render.confirm(f"Pause instance {machine_id}?", skip=state.yes):
-        raise typer.Abort()
+        raise typer.Exit()
 
     client = get_client()
     with render.spinner("Pausing instance..."):
@@ -99,14 +107,43 @@ def instance_pause(
 @instance_app.command("resume")
 def instance_resume(
     machine_id: int = typer.Argument(..., help="Instance ID to resume."),
+    gpu: str | None = typer.Option(None, "--gpu", "-g", help="Resume with a different GPU type."),
+    num_gpus: int | None = typer.Option(None, "--num-gpus", help="Change number of GPUs."),
+    storage: int | None = typer.Option(None, "--storage", "-s", help="Expand storage (GB). Can only increase."),
+    name: str | None = typer.Option(None, "--name", "-n", help="Rename instance."),
+    script_id: str | None = typer.Option(None, "--script-id", help="Startup script ID to use on resume."),
+    script_args: str | None = typer.Option(None, "--script-args", help="Arguments passed to startup script."),
 ) -> None:
-    """Resume a paused instance."""
-    if not render.confirm(f"Resume instance {machine_id}?", skip=state.yes):
-        raise typer.Abort()
+    """Resume a paused instance. Optionally swap GPU, expand storage, or rename."""
+    changes: list[str] = []
+    if gpu:
+        changes.append(f"gpu={gpu}")
+    if num_gpus is not None:
+        changes.append(f"num_gpus={num_gpus}")
+    if storage is not None:
+        changes.append(f"storage={storage}GB")
+    if name is not None:
+        changes.append(f"name={name!r}")
+    if script_id is not None:
+        changes.append(f"script_id={script_id}")
+    if script_args is not None:
+        changes.append(f"script_args={script_args!r}")
+
+    details = ", ".join(changes) if changes else "current configuration"
+    if not render.confirm(f"Resume instance {machine_id} with {details}?", skip=state.yes):
+        raise typer.Exit()
 
     client = get_client()
     with render.spinner("Resuming instance..."):
-        inst = client.instances.resume(machine_id)
+        inst = client.instances.resume(
+            machine_id,
+            gpu_type=gpu,
+            num_gpus=num_gpus,
+            storage=storage,
+            name=name,
+            script_id=script_id,
+            script_args=script_args,
+        )
 
     if state.json_output:
         render.print_json(inst)
@@ -125,7 +162,7 @@ def instance_destroy(
         f"Destroy instance {machine_id}? This cannot be undone.",
         skip=state.yes,
     ):
-        raise typer.Abort()
+        raise typer.Exit()
 
     client = get_client()
     with render.spinner("Destroying instance..."):
@@ -163,7 +200,7 @@ def instance_ssh(
 
     parts = shlex.split(inst.ssh_command)
     if not parts or parts[0] != "ssh":
-        render.die(f"Unexpected SSH command format: {inst.ssh_command}")
+        render.die(f"Cannot parse SSH command: {inst.ssh_command}")
 
     render.info(f"Connecting to {machine_id}...")
     raise SystemExit(subprocess.call(parts))

@@ -8,6 +8,7 @@ import pytest
 
 from jarvislabs.client import (
     Instances,
+    Scripts,
     SSHKeys,
     _fetch_instances,
     _get_instance,
@@ -32,6 +33,10 @@ from jarvislabs.models import SSHKey
 
 def _make_instances(mock_transport):
     return Instances(mock_transport, SSHKeys(mock_transport))
+
+
+def _make_scripts(mock_transport):
+    return Scripts(mock_transport)
 
 
 def _mock_existing_instance():
@@ -108,15 +113,15 @@ class TestValidateEurope:
         _validate_europe("H200", 8, 200)
 
     def test_invalid_gpu(self):
-        with pytest.raises(ValidationError, match="europe-01 supports only"):
+        with pytest.raises(ValidationError, match="supports only"):
             _validate_europe("RTX5000", 1, 100)
 
     def test_invalid_count_2(self):
-        with pytest.raises(ValidationError, match="num_gpus"):
+        with pytest.raises(ValidationError, match="GPUs per instance"):
             _validate_europe("H100", 2, 100)
 
     def test_invalid_count_4(self):
-        with pytest.raises(ValidationError, match="num_gpus"):
+        with pytest.raises(ValidationError, match="GPUs per instance"):
             _validate_europe("H100", 4, 100)
 
     def test_storage_too_low(self):
@@ -136,7 +141,7 @@ class TestPreflightVm:
             _preflight_vm("L4", EUROPE_REGION, [_DUMMY_KEY])
 
     def test_bad_region(self):
-        with pytest.raises(ValidationError, match="europe-01"):
+        with pytest.raises(ValidationError, match="only available in europe-01"):
             _preflight_vm("H100", "india-01", [_DUMMY_KEY])
 
     def test_empty_ssh_keys(self):
@@ -241,7 +246,7 @@ class TestPollUntilRunning:
         with (
             patch("jarvislabs.client.time.monotonic", side_effect=[0, 250, 301]),
             patch("jarvislabs.client.time.sleep"),
-            pytest.raises(APIError, match=r"Timed out.*300s"),
+            pytest.raises(APIError, match=r"Timed out.*Try again later"),
         ):
             _poll_until_running(mock_transport, machine_id=1, region=EUROPE_REGION)
 
@@ -293,6 +298,59 @@ class TestGetInstance:
         assert mock_transport.request.call_count == 3
 
 
+# ── Scripts ───────────────────────────────────────────────────────────────────
+
+
+class TestScripts:
+    def test_list_parses_script_meta(self, mock_transport):
+        mock_transport.request.return_value = {
+            "success": True,
+            "script_meta": [{"script_id": 11, "script_name": "bootstrap"}],
+        }
+
+        scripts = _make_scripts(mock_transport).list()
+        assert len(scripts) == 1
+        assert scripts[0].script_id == 11
+        assert scripts[0].script_name == "bootstrap"
+
+    def test_list_handles_empty(self, mock_transport):
+        mock_transport.request.return_value = {"success": True, "script_meta": []}
+        scripts = _make_scripts(mock_transport).list()
+        assert scripts == []
+
+    def test_add_uses_multipart_and_query_params(self, mock_transport):
+        mock_transport.request.return_value = {"message": "Script added successfully."}
+        _make_scripts(mock_transport).add(b"echo hi", name="init-script")
+
+        kwargs = mock_transport.request.call_args.kwargs
+        assert kwargs["params"] == {"name": "init-script"}
+        filename, content, mime = kwargs["files"]["script"]
+        assert filename == "startup.sh"
+        assert content == b"echo hi"
+        assert mime == "application/x-sh"
+
+    def test_update_uses_multipart_and_script_id(self, mock_transport):
+        mock_transport.request.return_value = {"message": "Script added successfully."}
+        _make_scripts(mock_transport).update(7, b"echo updated")
+
+        kwargs = mock_transport.request.call_args.kwargs
+        assert kwargs["params"] == {"script_id": 7}
+        filename, content, mime = kwargs["files"]["script"]
+        assert filename == "startup.sh"
+        assert content == b"echo updated"
+        assert mime == "application/x-sh"
+
+    def test_remove_uses_delete_query(self, mock_transport):
+        mock_transport.request.return_value = {"message": "Script deleted successfully."}
+        _make_scripts(mock_transport).remove(9)
+
+        mock_transport.request.assert_called_with("DELETE", "scripts/", params={"script_id": 9})
+
+    def test_add_rejects_empty_script(self, mock_transport):
+        with pytest.raises(ValidationError, match="cannot be empty"):
+            _make_scripts(mock_transport).add(b"   \n")
+
+
 # ── create() payload ─────────────────────────────────────────────────────────
 
 
@@ -309,7 +367,6 @@ class TestCreatePayload:
             template="pytorch",
             storage=50,
             name="test",
-            region="india-01",
             disk_type="ssd",
             is_reserved=True,
             http_ports="8080,9090",
@@ -336,7 +393,7 @@ class TestCreatePayload:
         mock_transport.request.return_value = {"machine_id": 1}
         mock_get.return_value = MagicMock(machine_id=1)
 
-        _make_instances(mock_transport).create(gpu_type="RTX5000", region="india-01", is_reserved=False)
+        _make_instances(mock_transport).create(gpu_type="RTX5000", is_reserved=False)
         assert mock_transport.request.call_args.kwargs["json"]["is_reserved"] is False
 
     @patch("jarvislabs.client._get_instance")
@@ -345,7 +402,7 @@ class TestCreatePayload:
         mock_transport.request.return_value = {"machine_id": 1}
         mock_get.return_value = MagicMock(machine_id=1)
 
-        _make_instances(mock_transport).create(gpu_type="H100", region=EUROPE_REGION, storage=20)
+        _make_instances(mock_transport).create(gpu_type="H100", storage=20)
         assert mock_transport.request.call_args.kwargs["json"]["hdd"] >= EUROPE_MIN_STORAGE_GB
 
 

@@ -12,8 +12,8 @@ from rich.table import Table
 from rich.theme import Theme
 
 TABLE_BOX = box.ROUNDED
-HEADER_STYLE = "bold cyan"
-TITLE_STYLE = "bold cyan"
+HEADER_STYLE = "bold"
+TITLE_STYLE = "bold"
 BORDER_STYLE = "dim"
 
 theme = Theme(
@@ -22,7 +22,7 @@ theme = Theme(
         "success": "green",
         "warning": "yellow",
         "error": "bold red",
-        "title": "bold cyan",
+        "title": "bold",
     }
 )
 
@@ -51,8 +51,8 @@ def account_status(info, bal, metrics, sym: str) -> None:
     from rich.text import Text
 
     content = Text()
-    content.append(f"{info.name}", style="bold white")
-    content.append(f"  {info.user_id}\n", style="dim")
+    content.append(f"{info.name}", style="bold")
+    content.append(f"  {info.user_id}\n", style="cyan")
     content.append("\n")
     content.append("Balance  ", style="dim")
     content.append(f"{sym}{bal.balance:.2f}", style="bold green")
@@ -66,7 +66,7 @@ def account_status(info, bal, metrics, sym: str) -> None:
 
     panel = Panel(
         content,
-        title="[bold cyan]⚡ Account[/bold cyan]",
+        title="[bold]⚡ Account[/bold]",
         border_style="dim",
         box=box.ROUNDED,
         padding=(1, 2),
@@ -77,27 +77,34 @@ def account_status(info, bal, metrics, sym: str) -> None:
 # ── Tables ───────────────────────────────────────────────────────────────────
 
 
+def _table(title: str | None = None, **kwargs) -> Table:
+    """Create a table with standard styling."""
+    return Table(
+        title=title,
+        box=TABLE_BOX,
+        title_style=TITLE_STYLE,
+        header_style=HEADER_STYLE,
+        border_style=BORDER_STYLE,
+        **kwargs,
+    )
+
+
 def instances_table(instances: list, currency: str = "USD") -> None:
     if not instances:
         info("No instances found.")
         return
 
-    table = Table(
-        title="Instances",
-        box=TABLE_BOX,
-        title_style=TITLE_STYLE,
-        header_style=HEADER_STYLE,
-        border_style=BORDER_STYLE,
-        show_lines=True,
-    )
+    sym = "₹" if currency == "INR" else "$"
+
+    table = _table("Instances", show_lines=True)
     table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Name", style="white")
+    table.add_column("Name", style="bold")
     table.add_column("Status", no_wrap=True)
-    table.add_column("GPU", style="magenta", no_wrap=True)
+    table.add_column("GPU", style="bold", no_wrap=True)
     table.add_column("GPUs", justify="right")
     table.add_column("Storage", justify="right")
-    table.add_column("Template", style="dim")
-    table.add_column("Region", style="dim")
+    table.add_column("Cost", justify="right")
+    table.add_column("Template")
 
     for inst in instances:
         status_style = _status_style(inst.status)
@@ -108,8 +115,8 @@ def instances_table(instances: list, currency: str = "USD") -> None:
             inst.gpu_type or "—",
             str(inst.num_gpus or "—"),
             f"{inst.storage_gb}GB" if inst.storage_gb else "—",
+            _cost_cell(inst, sym),
             inst.template,
-            inst.region or "—",
         )
 
     stdout_console.print(table)
@@ -117,23 +124,27 @@ def instances_table(instances: list, currency: str = "USD") -> None:
 
 def instance_detail(inst, currency: str = "USD") -> None:
     sym = "₹" if currency == "INR" else "$"
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Field", style="bold cyan")
-    table.add_column("Value")
+    table = Table(show_header=False, box=None, padding=(0, 2), border_style=BORDER_STYLE)
+    table.add_column("Field", style="dim")
+    # Avoid cutting off long values like notebook URLs with auth tokens.
+    table.add_column("Value", overflow="fold")
 
     status_style = _status_style(inst.status)
 
+    cost_label = "Storage cost" if inst.status == "Paused" else "Session cost"
+
+    url_value = f"[link={inst.url}][magenta]{inst.url}[/magenta][/link]" if inst.url else "—"
+
     rows = [
-        ("ID", str(inst.machine_id)),
-        ("Name", inst.name or "—"),
+        ("ID", f"[cyan]{inst.machine_id}[/cyan]"),
+        ("Name", f"[bold]{inst.name or '—'}[/bold]"),
         ("Status", f"[{status_style}]{inst.status}[/{status_style}]"),
-        ("GPU", f"{inst.num_gpus or 1}x {inst.gpu_type or '—'}"),
+        ("GPU", f"[bold]{inst.num_gpus or 1}x {inst.gpu_type or '—'}[/bold]"),
         ("Template", inst.template),
         ("Storage", f"{inst.storage_gb}GB" if inst.storage_gb else "—"),
-        ("Region", inst.region or "—"),
-        ("Cost", f"{sym}{inst.cost:.2f}"),
-        ("SSH", inst.ssh_command or "—"),
-        ("URL", inst.url or "—"),
+        (cost_label, f"[green]{sym}{inst.cost:.2f}[/green]"),
+        ("SSH", f"[cyan]{inst.ssh_command}[/cyan]" if inst.ssh_command else "—"),
+        ("URL", url_value),
     ]
 
     for field, value in rows:
@@ -147,16 +158,29 @@ def ssh_keys_table(keys: list) -> None:
         info("No SSH keys found.")
         return
 
-    table = Table(
-        title="SSH Keys", box=TABLE_BOX, title_style=TITLE_STYLE, header_style=HEADER_STYLE, border_style=BORDER_STYLE
-    )
+    table = _table("SSH Keys")
     table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Name", style="white")
+    table.add_column("Name", style="bold")
     table.add_column("Key", style="dim", max_width=50)
 
     for key in keys:
         display_key = key.ssh_key[:40] + "..." if len(key.ssh_key) > 40 else key.ssh_key
         table.add_row(key.key_id, key.key_name, display_key)
+
+    stdout_console.print(table)
+
+
+def scripts_table(scripts: list) -> None:
+    if not scripts:
+        info("No startup scripts found.")
+        return
+
+    table = _table("Startup Scripts")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Name", style="bold")
+
+    for script in scripts:
+        table.add_row(str(script.script_id), script.script_name or "—")
 
     stdout_console.print(table)
 
@@ -178,11 +202,7 @@ def gpu_table(gpus: list, currency: str = "USD") -> None:
     available = [g for g in seen.values() if g.num_free_devices > 0]
     unavailable = [g for g in seen.values() if g.num_free_devices <= 0]
 
-    table = Table(
-        box=TABLE_BOX,
-        header_style=HEADER_STYLE,
-        border_style=BORDER_STYLE,
-    )
+    table = _table()
     table.add_column("", no_wrap=True)
     table.add_column("GPU", no_wrap=True)
     table.add_column("VRAM", justify="right")
@@ -193,11 +213,11 @@ def gpu_table(gpus: list, currency: str = "USD") -> None:
     for gpu in available:
         table.add_row(
             "[green]●[/green]",
-            f"[bold cyan]{gpu.gpu_type}[/bold cyan]",
+            f"[bold]{gpu.gpu_type}[/bold]",
             f"{gpu.vram}GB" if gpu.vram else "—",
             f"{gpu.ram_per_gpu}GB" if gpu.ram_per_gpu else "—",
             str(gpu.cpus_per_gpu) if gpu.cpus_per_gpu else "—",
-            f"[yellow]{sym}{gpu.price_per_hour:.2f}[/yellow]" if gpu.price_per_hour else "—",
+            f"[green]{sym}{gpu.price_per_hour:.2f}[/green]" if gpu.price_per_hour else "—",
         )
 
     for gpu in unavailable:
@@ -264,6 +284,13 @@ def spinner(msg: str):
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _cost_cell(inst, sym: str) -> str:
+    """Format cost for table display with contextual color."""
+    if inst.cost <= 0:
+        return "[dim]—[/dim]"
+    return f"[green]{sym}{inst.cost:.2f}[/green]"
 
 
 def _status_style(status: str) -> str:

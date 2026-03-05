@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import typer
 
 from jarvislabs.cli import render, state
@@ -24,10 +26,10 @@ def login(
         except Exception:
             msg = "Already logged in. Re-authenticate?"
         if not render.confirm(msg, skip=state.yes):
-            raise typer.Abort()
+            raise typer.Exit()
 
     if not token:
-        render.info("Generate your API key at: https://jarvislabs.ai/settings/api-keys")
+        render.info("Generate your API key at: [magenta]https://jarvislabs.ai/settings/api-keys[/magenta]")
         token = render.console.input("[yellow]?[/yellow] API token: ", password=True).strip()
     if not token:
         render.die("No token provided.")
@@ -42,9 +44,12 @@ def login(
     except JarvislabsError as e:
         render.die(f"Invalid token: {e}")
 
+    first_login = not existing
     config.setdefault("auth", {})["token"] = token
     save_config(config)
     render.success(f"Logged in as {info.name} ({info.user_id})")
+    if first_login:
+        render.info("Tip: Run `jl --install-completion` to enable tab completion")
 
 
 @app.command(rich_help_panel="Account")
@@ -69,7 +74,8 @@ def status() -> None:
         info = client.account.user_info()
         bal = client.account.balance()
         metrics = client.account.resource_metrics()
-        sym = "₹" if client.account.currency() == "INR" else "$"
+        currency = client.account.currency()
+        sym = "₹" if currency == "INR" else "$"
 
     if state.json_output:
         render.print_json(
@@ -77,6 +83,7 @@ def status() -> None:
                 "user": info.model_dump(),
                 "balance": bal.model_dump(),
                 "resources": metrics.model_dump(),
+                "currency": currency,
             }
         )
         return
@@ -86,7 +93,7 @@ def status() -> None:
 
 @app.command(rich_help_panel="Resources")
 def gpus() -> None:
-    """Show GPU availability and pricing across regions."""
+    """Show GPU availability and pricing."""
     client = get_client()
     with render.spinner("Fetching GPU availability..."):
         availability = client.account.gpu_availability()
@@ -110,18 +117,9 @@ def templates() -> None:
         render.print_json(tpls)
         return
 
-    from rich import box
-    from rich.table import Table
-
-    table = Table(
-        title="Templates",
-        box=box.ROUNDED,
-        title_style="bold cyan",
-        header_style="bold cyan",
-        border_style="dim",
-    )
+    table = render._table("Templates")
     table.add_column("ID", style="cyan")
-    table.add_column("Title", style="white")
+    table.add_column("Title", style="bold")
     table.add_column("Category", style="dim")
     for t in tpls:
         table.add_row(t.id, t.title, t.category or "—")
@@ -130,6 +128,9 @@ def templates() -> None:
 
 ssh_key_app = typer.Typer(name="ssh-key", help="Manage SSH keys.")
 app.add_typer(ssh_key_app, rich_help_panel="Infrastructure")
+
+scripts_app = typer.Typer(name="scripts", help="Manage startup scripts.")
+app.add_typer(scripts_app, rich_help_panel="Infrastructure")
 
 
 @ssh_key_app.command("list")
@@ -167,8 +168,85 @@ def ssh_key_remove(
 ) -> None:
     """Remove an SSH key."""
     if not render.confirm(f"Remove SSH key {key_id}?", skip=state.yes):
-        raise typer.Abort()
+        raise typer.Exit()
 
     client = get_client()
     client.ssh_keys.remove(key_id)
     render.success(f"SSH key {key_id} removed.")
+
+
+@scripts_app.command("list")
+def scripts_list() -> None:
+    """List startup scripts."""
+    client = get_client()
+    with render.spinner("Fetching startup scripts..."):
+        scripts = client.scripts.list()
+
+    if state.json_output:
+        render.print_json(scripts)
+        return
+
+    render.scripts_table(scripts)
+
+
+@scripts_app.command("add")
+def scripts_add(
+    script_file: typer.FileBinaryRead = typer.Argument(..., help="Path to script file."),
+    name: str | None = typer.Option(None, "--name", "-n", help="Script name (defaults to filename stem)."),
+) -> None:
+    """Add a startup script."""
+    content = script_file.read()
+    if not content.strip():
+        render.die("Script file is empty.")
+
+    default_name = os.path.splitext(os.path.basename(script_file.name))[0]
+    script_name = name.strip() if name else default_name
+    client = get_client()
+    with render.spinner("Adding startup script..."):
+        client.scripts.add(content, script_name)
+
+    if state.json_output:
+        render.print_json({"success": True, "name": script_name})
+        return
+
+    render.success(f"Script '{script_name}' added.")
+
+
+@scripts_app.command("update")
+def scripts_update(
+    script_id: int = typer.Argument(..., help="Script ID to update."),
+    script_file: typer.FileBinaryRead = typer.Argument(..., help="Path to script file."),
+) -> None:
+    """Update startup script contents."""
+    content = script_file.read()
+    if not content.strip():
+        render.die("Script file is empty.")
+
+    client = get_client()
+    with render.spinner("Updating startup script..."):
+        client.scripts.update(script_id, content)
+
+    if state.json_output:
+        render.print_json({"success": True, "script_id": script_id})
+        return
+
+    render.success(f"Script {script_id} updated.")
+
+
+@scripts_app.command("remove")
+def scripts_remove(
+    script_id: int = typer.Argument(..., help="Script ID to remove."),
+) -> None:
+    """Remove a startup script."""
+    if not render.confirm(f"Remove startup script {script_id}?", skip=state.yes):
+        raise typer.Exit()
+
+    client = get_client()
+    with render.spinner("Removing startup script..."):
+        client.scripts.remove(script_id)
+
+    if state.json_output:
+        render.print_json({"success": True, "script_id": script_id})
+        return
+
+    render.success(f"Script {script_id} removed.")

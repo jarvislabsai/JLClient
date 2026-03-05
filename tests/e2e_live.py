@@ -319,27 +319,14 @@ except ValidationError:
 except Exception as e:
     record("create(vm+L4)", "FAIL", f"wrong error: {type(e).__name__}")
 
-# VM + non-europe region
-try:
-    client.instances.create(gpu_type="H100", template="vm", region="india-01")
-    record("create(vm+india)", "FAIL", "should have raised ValidationError")
-except ValidationError:
-    record("create(vm+india)", "PASS", "ValidationError raised")
-except Exception as e:
-    record("create(vm+india)", "FAIL", f"wrong error: {type(e).__name__}")
-
-# Europe + invalid GPU
-try:
-    client.instances.create(gpu_type="RTX5000", region="europe-01")
-    record("create(europe+RTX5000)", "FAIL", "should have raised ValidationError")
-except ValidationError:
-    record("create(europe+RTX5000)", "PASS", "ValidationError raised")
-except Exception as e:
-    record("create(europe+RTX5000)", "FAIL", f"wrong error: {type(e).__name__}")
+# Region is now internal-only in SDK create(); these explicit region-negative
+# checks are intentionally skipped.
+record("create(vm+india)", "SKIP", "region is not user-facing in SDK create()")
+record("create(europe+RTX5000)", "SKIP", "region is not user-facing in SDK create()")
 
 # Europe + invalid GPU count
 try:
-    client.instances.create(gpu_type="H100", num_gpus=2, region="europe-01")
+    client.instances.create(gpu_type="H100", num_gpus=2)
     record("create(europe+2xH100)", "FAIL", "should have raised ValidationError")
 except ValidationError:
     record("create(europe+2xH100)", "PASS", "ValidationError raised")
@@ -766,7 +753,6 @@ try:
         template="pytorch",
         storage=100,
         name="e2e-h200",
-        region="europe-01",
     )
     h200_mid = h200_inst.machine_id
     cleanup_ids.append(h200_mid)
@@ -842,7 +828,6 @@ try:
                 template="vm",
                 storage=100,
                 name="e2e-vm",
-                region="europe-01",
             )
             vm_mid = vm_inst.machine_id
             cleanup_ids.append(vm_mid)
@@ -884,14 +869,15 @@ except Exception as e:
     record("VM test", "FAIL", f"unexpected: {type(e).__name__}: {e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 11. INDIA-NOIDA-01 (V2) REGION — L4
+# 11. AUTO-ROUTED L4 REGION — FULL LIFECYCLE
 # ══════════════════════════════════════════════════════════════════════════════
 
-section("11. India-Noida-01 region — L4 full lifecycle (create -> pause -> resume -> destroy)")
+section("11. Auto-routed L4 region — full lifecycle (create -> pause -> resume -> destroy)")
 
 noida_mid = None
+noida_region = None
 
-print("\n  Creating L4 in india-noida-01... this will take ~1-3 min")
+print("\n  Creating L4 with auto-routing... this will take ~1-3 min")
 try:
     noida_inst = client.instances.create(
         gpu_type="L4",
@@ -899,26 +885,26 @@ try:
         template="pytorch",
         storage=20,
         name="e2e-noida",
-        region="india-noida-01",
     )
     noida_mid = noida_inst.machine_id
+    noida_region = noida_inst.region
     cleanup_ids.append(noida_mid)
     assert noida_inst.status == "Running"
-    assert noida_inst.region == "india-noida-01"
     record(
-        "create(L4 noida)",
+        "create(L4 auto-route)",
         "PASS",
         f"id={noida_mid}, region={noida_inst.region}",
     )
 except Exception as e:
-    record("create(L4 noida)", "FAIL", f"{type(e).__name__}: {e}")
+    record("create(L4 auto-route)", "FAIL", f"{type(e).__name__}: {e}")
     traceback.print_exc()
 
 # GET + field verification
 if noida_mid:
     try:
         noida_fetched = client.instances.get(noida_mid)
-        assert noida_fetched.region == "india-noida-01"
+        assert noida_region is not None
+        assert noida_fetched.region == noida_region
         assert noida_fetched.gpu_type == "L4", f"gpu_type: expected L4, got {noida_fetched.gpu_type}"
         assert noida_fetched.template == "pytorch"
         assert noida_fetched.is_reserved is not None
@@ -959,7 +945,8 @@ if noida_mid and noida_paused_ok:
     try:
         noida_resumed = client.instances.resume(noida_mid)
         assert noida_resumed.status == "Running"
-        assert noida_resumed.region == "india-noida-01", f"region: expected india-noida-01, got {noida_resumed.region}"
+        assert noida_region is not None
+        assert noida_resumed.region == noida_region, f"region: expected {noida_region}, got {noida_resumed.region}"
         noida_mid = noida_resumed.machine_id
         cleanup_ids.append(noida_mid)
         if noida_old_id in cleanup_ids:

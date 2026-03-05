@@ -12,7 +12,18 @@ from jarvislabs.cli import state
 
 app = typer.Typer(
     name="jl",
-    help="[bold cyan]⚡ JarvisLabs[/bold cyan] GPU Cloud CLI",
+    help=(
+        "[bold cyan]⚡ JarvisLabs[/bold cyan] GPU Cloud CLI\n\n"
+        "Use command groups, then inspect their subcommands:\n"
+        "  [bold]jl instance --help[/bold]\n"
+        "  [bold]jl ssh-key --help[/bold]\n\n"
+        "  [bold]jl scripts --help[/bold]\n\n"
+        "Quick examples:\n"
+        "  [bold]jl gpus[/bold]\n"
+        "  [bold]jl instance list[/bold]\n"
+        "  [bold]jl instance create --gpu H100 --num-gpus 1 --storage 100[/bold]\n"
+        "  [bold]jl scripts list[/bold]"
+    ),
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,
 )

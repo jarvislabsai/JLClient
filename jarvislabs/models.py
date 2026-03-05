@@ -50,6 +50,14 @@ class SSHKey(BaseModel):
     user_id: str | None = None
 
 
+# ── Scripts ──────────────────────────────────────────────────────────────────
+
+
+class StartupScript(BaseModel):
+    script_id: int
+    script_name: str | None = None
+
+
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 

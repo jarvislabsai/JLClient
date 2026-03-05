@@ -49,7 +49,6 @@ Generate a token from [here](https://jarvislabs.ai/settings/api-keys).
 | duration            | str  | Choose hour, week, and month. The pricing changes based on the duration.. | hour          |
 | http_ports          | str  | As per your requirement, you can specify the ports.                       | None          |
 | storage             | int  | Choose between 20GB to 2TB.                                               | 20            |
-| region              | str  | Optional. Choose from **india-01**, **india-noida-01**, **europe-01**.   | auto-resolved |
 
 ```python
 # CPU Instance Example
@@ -69,18 +68,6 @@ instance: Instance = Instance.create('GPU',
                             storage=50,
                             template='pytorch',
                             name='gpu instance')
-
-
-# Europe H200 Example
-
-instance: Instance = Instance.create('GPU',
-                            gpu_type='H200',
-                            num_gpus=1,
-                            storage=100,
-                            template='pytorch',
-                            region='europe-01',
-                            name='europe h200 instance')
-
 
 ```
 
@@ -105,9 +92,9 @@ This should return the Instance object, which includes the following attributes
 
 If the Instance object isn't returned, an error dictionary will be provided.
 
-If `region` is not passed, JLClient auto-resolves the best region from server metadata.
+JLClient auto-resolves the best placement from backend capacity data.
 
-For `europe-01`, JLClient enforces:
+For certain high-end capacity pools, JLClient enforces:
 
 - GPU type must be `H100` or `H200`
 - `num_gpus` must be `1` or `8`
@@ -117,9 +104,8 @@ For `template='vm'`, JLClient enforces:
 
 - only GPU instances (no CPU vm create)
 - GPU must be `H100` or `H200`
-- region must be `europe-01`
 
-For India/Noida regions, GPU availability is dynamic and region-specific. If a requested GPU is not available in that region at launch time, backend availability errors are returned to the client.
+GPU availability is dynamic. If a requested GPU is unavailable at launch time, backend availability errors are returned to the client.
 
 **Note:** Please contact us if you encounter any errors while launching the instance.
 

@@ -39,7 +39,6 @@ class Transport:
             ),
             headers={
                 "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
             },
         )
 
@@ -50,6 +49,8 @@ class Transport:
         *,
         json: dict | None = None,
         params: dict | None = None,
+        files: dict | None = None,
+        data: dict | None = None,
         base_url: str | None = None,
     ) -> dict | list:
         """Send an HTTP request with retries on transient failures."""
@@ -61,7 +62,14 @@ class Transport:
 
         for attempt in range(MAX_RETRIES + 1):
             try:
-                resp = self._client.request(method, url, json=json, params=params)
+                resp = self._client.request(
+                    method,
+                    url,
+                    json=json,
+                    params=params,
+                    files=files,
+                    data=data,
+                )
             except httpx.HTTPError as exc:
                 if safe_to_retry and attempt < MAX_RETRIES:
                     time.sleep(2**attempt)

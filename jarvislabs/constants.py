@@ -25,7 +25,7 @@ EUROPE_POLL_TIMEOUT_S = 300  # 5 min — Nebius is slower
 # ── Timeouts & Polling ───────────────────────────────────────────────────────
 
 DEFAULT_POLL_TIMEOUT_S = 180  # 3 min for India regions
-POLL_INTERVAL_S = 10
+POLL_INTERVAL_S = 3
 FETCH_RETRY_INTERVAL_S = 2  # DB replication lag retry — much shorter than poll interval
 HTTP_TIMEOUT_CONNECT_S = 10
 HTTP_TIMEOUT_READ_S = 120  # V2/Nebius pause/destroy are synchronous and slow
