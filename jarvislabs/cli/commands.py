@@ -7,7 +7,7 @@ from jarvislabs.cli.app import app, get_client
 from jarvislabs.config import load_config, save_config
 
 
-@app.command()
+@app.command(rich_help_panel="Account")
 def login(
     token: str = typer.Option(None, "--token", "-t", help="API token (prompted if not given)."),
 ) -> None:
@@ -35,8 +35,9 @@ def login(
     try:
         from jarvislabs.client import Client
 
-        client = Client(api_key=token)
-        info = client.account.user_info()
+        with render.spinner("Authenticating..."):
+            client = Client(api_key=token)
+            info = client.account.user_info()
     except Exception as e:
         render.die(f"Invalid token: {e}")
 
@@ -45,7 +46,7 @@ def login(
     render.success(f"Logged in as {info.name} ({info.user_id})")
 
 
-@app.command()
+@app.command(rich_help_panel="Account")
 def logout() -> None:
     """Remove saved API token from config file."""
     config = load_config()
@@ -59,14 +60,15 @@ def logout() -> None:
         render.info("No saved token found.")
 
 
-@app.command()
+@app.command(rich_help_panel="Account")
 def status() -> None:
     """Show account info, balance, and resource summary."""
     client = get_client()
-    info = client.account.user_info()
-    bal = client.account.balance()
-    metrics = client.account.resource_metrics()
-    sym = "₹" if client.account.currency() == "INR" else "$"
+    with render.spinner("Fetching account info..."):
+        info = client.account.user_info()
+        bal = client.account.balance()
+        metrics = client.account.resource_metrics()
+        sym = "₹" if client.account.currency() == "INR" else "$"
 
     if state.json_output:
         render.print_json(
@@ -78,37 +80,45 @@ def status() -> None:
         )
         return
 
-    render.success(f"{info.name} ({info.user_id})")
-    render.info(f"Balance: {sym}{bal.balance:.2f}  |  Grants: {sym}{bal.grants:.2f}")
-    render.info(f"Running: {metrics.running_instances}  |  Paused: {metrics.paused_instances}")
+    render.account_status(info, bal, metrics, sym)
 
 
-@app.command()
+@app.command(rich_help_panel="Resources")
 def gpus() -> None:
     """Show GPU availability and pricing across regions."""
     client = get_client()
-    availability = client.account.gpu_availability()
+    with render.spinner("Fetching GPU availability..."):
+        availability = client.account.gpu_availability()
+        currency = client.account.currency()
 
     if state.json_output:
         render.print_json(availability)
         return
 
-    render.gpu_table(availability, client.account.currency())
+    render.gpu_table(availability, currency)
 
 
-@app.command()
+@app.command(rich_help_panel="Resources")
 def templates() -> None:
     """List available instance templates."""
     client = get_client()
-    tpls = client.account.templates()
+    with render.spinner("Fetching templates..."):
+        tpls = client.account.templates()
 
     if state.json_output:
         render.print_json(tpls)
         return
 
+    from rich import box
     from rich.table import Table
 
-    table = Table(title="Templates")
+    table = Table(
+        title="Templates",
+        box=box.ROUNDED,
+        title_style="bold cyan",
+        header_style="bold cyan",
+        border_style="dim",
+    )
     table.add_column("ID", style="cyan")
     table.add_column("Title", style="white")
     table.add_column("Category", style="dim")
@@ -118,14 +128,15 @@ def templates() -> None:
 
 
 ssh_key_app = typer.Typer(name="ssh-key", help="Manage SSH keys.")
-app.add_typer(ssh_key_app)
+app.add_typer(ssh_key_app, rich_help_panel="Infrastructure")
 
 
 @ssh_key_app.command("list")
 def ssh_key_list() -> None:
     """List SSH keys."""
     client = get_client()
-    keys = client.ssh_keys.list()
+    with render.spinner("Fetching SSH keys..."):
+        keys = client.ssh_keys.list()
 
     if state.json_output:
         render.print_json(keys)

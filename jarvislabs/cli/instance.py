@@ -10,20 +10,22 @@ from jarvislabs.cli import render, state
 from jarvislabs.cli.app import app, get_client
 
 instance_app = typer.Typer(name="instance", help="Manage GPU instances.")
-app.add_typer(instance_app)
+app.add_typer(instance_app, rich_help_panel="Infrastructure")
 
 
 @instance_app.command("ls")
 def instance_ls() -> None:
     """List all instances."""
     client = get_client()
-    instances = client.instances.list()
+    with render.spinner("Fetching instances..."):
+        instances = client.instances.list()
+        currency = client.account.currency()
 
     if state.json_output:
         render.print_json(instances)
         return
 
-    render.instances_table(instances, client.account.currency())
+    render.instances_table(instances, currency)
 
 
 @instance_app.command("get")
@@ -32,13 +34,15 @@ def instance_get(
 ) -> None:
     """Show details of a specific instance."""
     client = get_client()
-    inst = client.instances.get(machine_id)
+    with render.spinner("Fetching instance..."):
+        inst = client.instances.get(machine_id)
+        currency = client.account.currency()
 
     if state.json_output:
         render.print_json(inst)
         return
 
-    render.instance_detail(inst, client.account.currency())
+    render.instance_detail(inst, currency)
 
 
 @instance_app.command("create")
@@ -55,15 +59,15 @@ def instance_create(
         raise typer.Abort()
 
     client = get_client()
-    render.info("Creating instance — this may take a few minutes...")
-    inst = client.instances.create(
-        gpu_type=gpu,
-        num_gpus=num_gpus,
-        template=template,
-        storage=storage,
-        name=name,
-        region=region,
-    )
+    with render.spinner("Creating instance — this may take a few minutes..."):
+        inst = client.instances.create(
+            gpu_type=gpu,
+            num_gpus=num_gpus,
+            template=template,
+            storage=storage,
+            name=name,
+            region=region,
+        )
 
     if state.json_output:
         render.print_json(inst)
@@ -82,7 +86,8 @@ def instance_pause(
         raise typer.Abort()
 
     client = get_client()
-    client.instances.pause(machine_id)
+    with render.spinner("Pausing instance..."):
+        client.instances.pause(machine_id)
     render.success(f"Instance {machine_id} paused.")
 
 
@@ -95,8 +100,8 @@ def instance_resume(
         raise typer.Abort()
 
     client = get_client()
-    render.info("Resuming instance — this may take a minute...")
-    inst = client.instances.resume(machine_id)
+    with render.spinner("Resuming instance..."):
+        inst = client.instances.resume(machine_id)
 
     if state.json_output:
         render.print_json(inst)
@@ -118,7 +123,8 @@ def instance_destroy(
         raise typer.Abort()
 
     client = get_client()
-    client.instances.destroy(machine_id)
+    with render.spinner("Destroying instance..."):
+        client.instances.destroy(machine_id)
     render.success(f"Instance {machine_id} destroyed.")
 
 
@@ -129,7 +135,8 @@ def instance_ssh(
 ) -> None:
     """SSH into a running instance."""
     client = get_client()
-    inst = client.instances.get(machine_id)
+    with render.spinner("Fetching instance..."):
+        inst = client.instances.get(machine_id)
 
     if not inst.ssh_command:
         render.die(f"Instance {machine_id} has no SSH command (status: {inst.status}).")

@@ -6,11 +6,28 @@ import json
 import sys
 
 from pydantic import BaseModel
+from rich import box
 from rich.console import Console
 from rich.table import Table
+from rich.theme import Theme
 
-console = Console(stderr=True)
-stdout_console = Console()
+TABLE_BOX = box.ROUNDED
+HEADER_STYLE = "bold cyan"
+TITLE_STYLE = "bold cyan"
+BORDER_STYLE = "dim"
+
+theme = Theme(
+    {
+        "info": "dim",
+        "success": "green",
+        "warning": "yellow",
+        "error": "bold red",
+        "title": "bold cyan",
+    }
+)
+
+console = Console(stderr=True, theme=theme)
+stdout_console = Console(theme=theme)
 
 
 # ── JSON output ──────────────────────────────────────────────────────────────
@@ -26,6 +43,37 @@ def print_json(data: list[BaseModel] | BaseModel | dict) -> None:
     stdout_console.print_json(json.dumps(raw, default=str))
 
 
+# ── Account Status ────────────────────────────────────────────────────────────
+
+
+def account_status(info, bal, metrics, sym: str) -> None:
+    from rich.panel import Panel
+    from rich.text import Text
+
+    content = Text()
+    content.append(f"{info.name}", style="bold white")
+    content.append(f"  {info.user_id}\n", style="dim")
+    content.append("\n")
+    content.append("Balance  ", style="dim")
+    content.append(f"{sym}{bal.balance:.2f}", style="bold green")
+    content.append("    Grants  ", style="dim")
+    content.append(f"{sym}{bal.grants:.2f}", style="bold yellow")
+    content.append("\n")
+    content.append("Running  ", style="dim")
+    content.append(f"{metrics.running_instances}", style="bold green")
+    content.append("         Paused  ", style="dim")
+    content.append(f"{metrics.paused_instances}", style="bold yellow")
+
+    panel = Panel(
+        content,
+        title="[bold cyan]⚡ Account[/bold cyan]",
+        border_style="dim",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    stdout_console.print(panel)
+
+
 # ── Tables ───────────────────────────────────────────────────────────────────
 
 
@@ -34,7 +82,14 @@ def instances_table(instances: list, currency: str = "USD") -> None:
         info("No instances found.")
         return
 
-    table = Table(title="Instances", show_lines=True)
+    table = Table(
+        title="Instances",
+        box=TABLE_BOX,
+        title_style=TITLE_STYLE,
+        header_style=HEADER_STYLE,
+        border_style=BORDER_STYLE,
+        show_lines=True,
+    )
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Name", style="white")
     table.add_column("Status", no_wrap=True)
@@ -92,7 +147,9 @@ def ssh_keys_table(keys: list) -> None:
         info("No SSH keys found.")
         return
 
-    table = Table(title="SSH Keys")
+    table = Table(
+        title="SSH Keys", box=TABLE_BOX, title_style=TITLE_STYLE, header_style=HEADER_STYLE, border_style=BORDER_STYLE
+    )
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Name", style="white")
     table.add_column("Key", style="dim", max_width=50)
@@ -118,22 +175,43 @@ def gpu_table(gpus: list, currency: str = "USD") -> None:
         if prev is None or (prev.num_free_devices <= 0 and gpu.num_free_devices > 0):
             seen[gpu.gpu_type] = gpu
 
-    table = Table(title="GPU Availability")
-    table.add_column("GPU", style="magenta", no_wrap=True)
+    available = [g for g in seen.values() if g.num_free_devices > 0]
+    unavailable = [g for g in seen.values() if g.num_free_devices <= 0]
+
+    table = Table(
+        box=TABLE_BOX,
+        header_style=HEADER_STYLE,
+        border_style=BORDER_STYLE,
+    )
+    table.add_column("", no_wrap=True)
+    table.add_column("GPU", no_wrap=True)
     table.add_column("VRAM", justify="right")
     table.add_column("RAM", justify="right")
     table.add_column("CPUs", justify="right")
-    table.add_column(f"{sym}/hr", justify="right", style="yellow")
+    table.add_column(f"{sym}/hr", justify="right")
 
-    for gpu in seen.values():
+    for gpu in available:
         table.add_row(
-            gpu.gpu_type,
+            "[green]●[/green]",
+            f"[bold cyan]{gpu.gpu_type}[/bold cyan]",
             f"{gpu.vram}GB" if gpu.vram else "—",
             f"{gpu.ram_per_gpu}GB" if gpu.ram_per_gpu else "—",
             str(gpu.cpus_per_gpu) if gpu.cpus_per_gpu else "—",
-            f"{sym}{gpu.price_per_hour:.2f}" if gpu.price_per_hour else "—",
+            f"[yellow]{sym}{gpu.price_per_hour:.2f}[/yellow]" if gpu.price_per_hour else "—",
         )
 
+    for gpu in unavailable:
+        table.add_row(
+            "[dim]○[/dim]",
+            f"[dim]{gpu.gpu_type}[/dim]",
+            f"[dim]{gpu.vram}GB[/dim]" if gpu.vram else "[dim]—[/dim]",
+            f"[dim]{gpu.ram_per_gpu}GB[/dim]" if gpu.ram_per_gpu else "[dim]—[/dim]",
+            f"[dim]{gpu.cpus_per_gpu}[/dim]" if gpu.cpus_per_gpu else "[dim]—[/dim]",
+            f"[dim]{sym}{gpu.price_per_hour:.2f}[/dim]" if gpu.price_per_hour else "[dim]—[/dim]",
+        )
+
+    table.caption = "[green]●[/green] available  [dim]○ unavailable[/dim]"
+    table.caption_justify = "center"
     stdout_console.print(table)
 
 
@@ -169,6 +247,14 @@ def confirm(msg: str, *, skip: bool = False) -> bool:
     except (KeyboardInterrupt, EOFError):
         console.print()
         return False
+
+
+# ── Spinner ──────────────────────────────────────────────────────────────────
+
+
+def spinner(msg: str):
+    """Rich spinner context manager for wrapping API calls."""
+    return console.status(f"[bold]{msg}[/bold]", spinner="dots")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

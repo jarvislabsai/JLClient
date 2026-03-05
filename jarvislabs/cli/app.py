@@ -12,7 +12,7 @@ from jarvislabs.cli import state
 
 app = typer.Typer(
     name="jl",
-    help="CLI for JarvisLabs.ai GPU cloud.",
+    help="[bold cyan]⚡ JarvisLabs[/bold cyan] GPU Cloud CLI",
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,
 )
@@ -22,9 +22,9 @@ app = typer.Typer(
 def _global_flags(
     ctx: typer.Context,
     json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts."),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation prompts."),
     verbose: bool = typer.Option(False, "--verbose", help="Show HTTP request details."),
-    token: str | None = typer.Option(None, "--token", envvar="JL_API_KEY", help="API key override."),
+    token: str | None = typer.Option(None, "--token", envvar="JL_API_KEY", metavar="API_KEY", help="API key override."),
     version: bool = typer.Option(False, "--version", help="Show version and exit."),
 ) -> None:
     if version:
