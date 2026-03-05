@@ -54,6 +54,7 @@ def instance_create(
     num_gpus: int = typer.Option(1, "--num-gpus", help="Number of GPUs."),
     script_id: str | None = typer.Option(None, "--script-id", help="Startup script ID to run on launch."),
     script_args: str = typer.Option("", "--script-args", help="Arguments passed to startup script."),
+    fs_id: int | None = typer.Option(None, "--fs-id", help="Filesystem ID to attach."),
 ) -> None:
     """Create a new GPU instance."""
     details = [f"gpu={num_gpus}x {gpu}", f"template={template}", f"storage={storage}GB", f"name={name!r}"]
@@ -61,6 +62,8 @@ def instance_create(
         details.append(f"script_id={script_id}")
     if script_args:
         details.append(f"script_args={script_args!r}")
+    if fs_id is not None:
+        details.append(f"fs_id={fs_id}")
     prompt = f"Create instance ({', '.join(details)})?"
     if not render.confirm(prompt, skip=state.yes):
         raise typer.Exit()
@@ -75,6 +78,7 @@ def instance_create(
             name=name,
             script_id=script_id,
             script_args=script_args,
+            fs_id=fs_id,
         )
 
     if state.json_output:
@@ -133,6 +137,7 @@ def instance_resume(
     name: str | None = typer.Option(None, "--name", "-n", help="Rename instance."),
     script_id: str | None = typer.Option(None, "--script-id", help="Startup script ID to use on resume."),
     script_args: str | None = typer.Option(None, "--script-args", help="Arguments passed to startup script."),
+    fs_id: int | None = typer.Option(None, "--fs-id", help="Filesystem ID to attach."),
 ) -> None:
     """Resume a paused instance. Optionally swap GPU, expand storage, or rename."""
     changes: list[str] = []
@@ -148,6 +153,8 @@ def instance_resume(
         changes.append(f"script_id={script_id}")
     if script_args is not None:
         changes.append(f"script_args={script_args!r}")
+    if fs_id is not None:
+        changes.append(f"fs_id={fs_id}")
 
     details = ", ".join(changes) if changes else "current configuration"
     if not render.confirm(f"Resume instance {machine_id} with {details}?", skip=state.yes):
@@ -163,6 +170,7 @@ def instance_resume(
             name=name,
             script_id=script_id,
             script_args=script_args,
+            fs_id=fs_id,
         )
 
     if state.json_output:

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from jarvislabs.client import (
+    Filesystems,
     Instances,
     Scripts,
     SSHKeys,
@@ -26,7 +27,7 @@ from jarvislabs.constants import (
     REGION_URLS,
 )
 from jarvislabs.exceptions import APIError, NotFoundError, ValidationError
-from jarvislabs.models import SSHKey
+from jarvislabs.models import SSHKey, StatusResponse
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,10 @@ def _make_instances(mock_transport):
 
 def _make_scripts(mock_transport):
     return Scripts(mock_transport)
+
+
+def _make_filesystems(mock_transport):
+    return Filesystems(mock_transport)
 
 
 def _mock_existing_instance():
@@ -218,6 +223,11 @@ class TestPollUntilRunning:
         _poll_until_running(mock_transport, machine_id=1, region="india-01")
         assert mock_transport.request.call_count == 1
 
+    def test_status_none_strings_are_coerced(self):
+        status = StatusResponse(status="Running", error="None", code="None")
+        assert status.error is None
+        assert status.code is None
+
     def test_404_then_running(self, mock_transport):
         mock_transport.request.side_effect = [
             NotFoundError("not found"),
@@ -351,6 +361,61 @@ class TestScripts:
             _make_scripts(mock_transport).add(b"   \n")
 
 
+class TestFilesystems:
+    def test_list_parses_filesystems(self, mock_transport):
+        mock_transport.request.return_value = [
+            {"fs_id": 1, "fs_name": "data", "storage": 100},
+            {"fs_id": 2, "fs_name": "models", "storage": 200},
+        ]
+
+        items = _make_filesystems(mock_transport).list()
+        assert len(items) == 2
+        assert items[0].fs_id == 1
+        assert items[0].fs_name == "data"
+        assert items[0].storage == 100
+
+    def test_create_uses_expected_payload(self, mock_transport):
+        mock_transport.request.return_value = {"fs_id": 15}
+        fs_id = _make_filesystems(mock_transport).create("data", 120)
+
+        assert fs_id == 15
+        mock_transport.request.assert_called_with(
+            "POST",
+            "filesystem/create",
+            json={"fs_name": "data", "storage": 120},
+        )
+
+    def test_create_validates_inputs(self, mock_transport):
+        with pytest.raises(ValidationError, match="cannot be empty"):
+            _make_filesystems(mock_transport).create("", 100)
+        with pytest.raises(ValidationError, match="30 characters or fewer"):
+            _make_filesystems(mock_transport).create("x" * 31, 100)
+        with pytest.raises(ValidationError, match="between 50GB and 2048GB"):
+            _make_filesystems(mock_transport).create("data", 49)
+
+    def test_edit_uses_expected_payload(self, mock_transport):
+        mock_transport.request.return_value = {"message": "Filesystem updated successfully", "fs_id": 21}
+        fs_id = _make_filesystems(mock_transport).edit(7, 180)
+
+        assert fs_id == 21
+        mock_transport.request.assert_called_with(
+            "POST",
+            "filesystem/edit",
+            json={"fs_id": 7, "storage": 180},
+        )
+
+    def test_remove_uses_expected_query(self, mock_transport):
+        mock_transport.request.return_value = {"success": True}
+        ok = _make_filesystems(mock_transport).remove(9)
+        assert ok is True
+        mock_transport.request.assert_called_with("POST", "filesystem/delete", params={"fs_id": 9})
+
+    def test_remove_raises_when_backend_reports_failure(self, mock_transport):
+        mock_transport.request.return_value = {"success": False, "error": "busy"}
+        with pytest.raises(APIError, match="Failed to remove filesystem"):
+            _make_filesystems(mock_transport).remove(9)
+
+
 # ── create() payload ─────────────────────────────────────────────────────────
 
 
@@ -368,7 +433,6 @@ class TestCreatePayload:
             storage=50,
             name="test",
             disk_type="ssd",
-            is_reserved=True,
             http_ports="8080,9090",
             script_id="s1",
             script_args="--flag",
@@ -386,15 +450,6 @@ class TestCreatePayload:
         assert payload["script_args"] == "--flag"
         assert payload["fs_id"] == 7
         assert payload["arguments"] == "--arg"
-
-    @patch("jarvislabs.client._get_instance")
-    @patch("jarvislabs.client._poll_until_running")
-    def test_is_reserved_false(self, _poll, mock_get, mock_transport):
-        mock_transport.request.return_value = {"machine_id": 1}
-        mock_get.return_value = MagicMock(machine_id=1)
-
-        _make_instances(mock_transport).create(gpu_type="RTX5000", is_reserved=False)
-        assert mock_transport.request.call_args.kwargs["json"]["is_reserved"] is False
 
     @patch("jarvislabs.client._get_instance")
     @patch("jarvislabs.client._poll_until_running")
@@ -441,12 +496,6 @@ class TestResumePayload:
         assert payload["hdd"] == 40
         assert payload["name"] == "old-name"
         assert payload["is_reserved"] is True
-
-    def test_is_reserved_false_uses_is_not_none(self, mock_transport):
-        """is_reserved=False should NOT fall back (uses `is not None` check)."""
-        instances = self._setup_resume(mock_transport)
-        instances.resume(10, is_reserved=False)
-        assert mock_transport.request.call_args.kwargs["json"]["is_reserved"] is False
 
     def test_script_args_defaults_to_empty(self, mock_transport):
         instances = self._setup_resume(mock_transport)

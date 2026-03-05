@@ -18,11 +18,13 @@ app = typer.Typer(
         "  [bold]jl instance --help[/bold]\n"
         "  [bold]jl ssh-key --help[/bold]\n\n"
         "  [bold]jl scripts --help[/bold]\n\n"
+        "  [bold]jl filesystem --help[/bold]\n\n"
         "Quick examples:\n"
         "  [bold]jl gpus[/bold]\n"
         "  [bold]jl instance list[/bold]\n"
         "  [bold]jl instance create --gpu H100 --num-gpus 1 --storage 100[/bold]\n"
-        "  [bold]jl scripts list[/bold]"
+        "  [bold]jl scripts list[/bold]\n"
+        "  [bold]jl filesystem list[/bold]"
     ),
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,

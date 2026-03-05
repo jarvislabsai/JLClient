@@ -132,6 +132,9 @@ app.add_typer(ssh_key_app, rich_help_panel="Infrastructure")
 scripts_app = typer.Typer(name="scripts", help="Manage startup scripts.")
 app.add_typer(scripts_app, rich_help_panel="Infrastructure")
 
+filesystem_app = typer.Typer(name="filesystem", help="Manage persistent filesystems.")
+app.add_typer(filesystem_app, rich_help_panel="Infrastructure")
+
 
 @ssh_key_app.command("list")
 def ssh_key_list() -> None:
@@ -250,3 +253,76 @@ def scripts_remove(
         return
 
     render.success(f"Script {script_id} removed.")
+
+
+@filesystem_app.command("list")
+def filesystem_list() -> None:
+    """List filesystems."""
+    client = get_client()
+    with render.spinner("Fetching filesystems..."):
+        filesystems = client.filesystems.list()
+
+    if state.json_output:
+        render.print_json(filesystems)
+        return
+
+    render.filesystems_table(filesystems)
+
+
+@filesystem_app.command("create")
+def filesystem_create(
+    name: str = typer.Option(..., "--name", "-n", help="Filesystem name."),
+    storage: int = typer.Option(..., "--storage", "-s", help="Storage in GB (50-2048)."),
+) -> None:
+    """Create a filesystem."""
+    if not render.confirm(f"Create filesystem (name={name!r}, storage={storage}GB)?", skip=state.yes):
+        raise typer.Exit()
+
+    client = get_client()
+    with render.spinner("Creating filesystem..."):
+        fs_id = client.filesystems.create(fs_name=name, storage=storage)
+
+    if state.json_output:
+        render.print_json({"success": True, "fs_id": fs_id, "fs_name": name, "storage": storage})
+        return
+
+    render.success(f"Filesystem {fs_id} created.")
+
+
+@filesystem_app.command("edit")
+def filesystem_edit(
+    fs_id: int = typer.Argument(..., help="Filesystem ID to edit."),
+    storage: int = typer.Option(..., "--storage", "-s", help="New storage size in GB (increase only)."),
+) -> None:
+    """Expand filesystem storage."""
+    if not render.confirm(f"Expand filesystem {fs_id} to {storage}GB?", skip=state.yes):
+        raise typer.Exit()
+
+    client = get_client()
+    with render.spinner("Updating filesystem..."):
+        new_fs_id = client.filesystems.edit(fs_id=fs_id, storage=storage)
+
+    if state.json_output:
+        render.print_json({"success": True, "fs_id": new_fs_id, "previous_fs_id": fs_id, "storage": storage})
+        return
+
+    render.success(f"Filesystem updated. New filesystem ID: {new_fs_id}.")
+
+
+@filesystem_app.command("remove")
+def filesystem_remove(
+    fs_id: int = typer.Argument(..., help="Filesystem ID to remove."),
+) -> None:
+    """Delete a filesystem."""
+    if not render.confirm(f"Remove filesystem {fs_id}?", skip=state.yes):
+        raise typer.Exit()
+
+    client = get_client()
+    with render.spinner("Removing filesystem..."):
+        client.filesystems.remove(fs_id)
+
+    if state.json_output:
+        render.print_json({"success": True, "fs_id": fs_id})
+        return
+
+    render.success(f"Filesystem {fs_id} removed.")

@@ -58,6 +58,15 @@ class StartupScript(BaseModel):
     script_name: str | None = None
 
 
+# ── Filesystems ──────────────────────────────────────────────────────────────
+
+
+class Filesystem(BaseModel):
+    fs_id: int
+    fs_name: str | None = None
+    storage: int | None = None
+
+
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 
@@ -155,3 +164,27 @@ class StatusResponse(BaseModel):
     status: str
     error: str | None = None
     code: int | str | None = None
+
+    @field_validator("error", mode="before")
+    @classmethod
+    def _coerce_error_none(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            raw = v.strip()
+            if raw.lower() in {"none", "null", ""}:
+                return None
+            return raw
+        return str(v)
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _coerce_code_none(cls, v: Any) -> int | str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            raw = v.strip()
+            if raw.lower() in {"none", "null", ""}:
+                return None
+            return raw
+        return v

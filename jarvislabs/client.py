@@ -27,6 +27,7 @@ from jarvislabs.constants import (
 from jarvislabs.exceptions import APIError, AuthError, NotFoundError, ValidationError
 from jarvislabs.models import (
     Balance,
+    Filesystem,
     Instance,
     InstanceListResponse,
     ResourceMetrics,
@@ -52,6 +53,7 @@ class Client:
         self.account = Account(self._transport)
         self.ssh_keys = SSHKeys(self._transport)
         self.scripts = Scripts(self._transport)
+        self.filesystems = Filesystems(self._transport)
         self.instances = Instances(self._transport, self.ssh_keys)
 
     def close(self) -> None:
@@ -167,6 +169,47 @@ class Scripts:
         return True
 
 
+class Filesystems:
+    """Manage persistent filesystems."""
+
+    def __init__(self, transport: Transport) -> None:
+        self._t = transport
+
+    def list(self) -> list[Filesystem]:
+        resp = self._t.request("GET", "filesystem/list")
+        if not isinstance(resp, list):
+            raise APIError(0, "Failed to fetch filesystems: unexpected response")
+        return [Filesystem(**item) for item in resp]
+
+    def create(self, fs_name: str, storage: int, deployment_id: str | None = None) -> int:
+        _validate_filesystem_name(fs_name)
+        _validate_filesystem_storage(storage)
+        payload: dict[str, str | int] = {"fs_name": fs_name, "storage": storage}
+        if deployment_id:
+            payload["deployment_id"] = deployment_id
+        resp = self._t.request("POST", "filesystem/create", json=payload)
+        fs_id = resp.get("fs_id") if isinstance(resp, dict) else None
+        if fs_id is None:
+            raise APIError(0, f"Failed to create filesystem: {_backend_msg(resp if isinstance(resp, dict) else {})}")
+        return int(fs_id)
+
+    def edit(self, fs_id: int, storage: int) -> int:
+        _validate_filesystem_storage(storage)
+        resp = self._t.request("POST", "filesystem/edit", json={"fs_id": fs_id, "storage": storage})
+        edited_fs_id = resp.get("fs_id") if isinstance(resp, dict) else None
+        if edited_fs_id is None:
+            raise APIError(0, f"Failed to edit filesystem: {_backend_msg(resp if isinstance(resp, dict) else {})}")
+        return int(edited_fs_id)
+
+    def remove(self, fs_id: int) -> bool:
+        resp = self._t.request("POST", "filesystem/delete", params={"fs_id": fs_id})
+        if isinstance(resp, dict) and ("success" in resp or "sucess" in resp):
+            if not _normalize_success(resp):
+                raise APIError(0, f"Failed to remove filesystem: {_backend_msg(resp)}")
+            return True
+        return True
+
+
 # ── Instances ────────────────────────────────────────────────────────────────
 
 
@@ -192,7 +235,6 @@ class Instances:
         storage: int = 40,
         name: str = "Name me",
         disk_type: str = "ssd",
-        is_reserved: bool = True,
         http_ports: str = "",
         script_id: str | None = None,
         script_args: str = "",
@@ -218,7 +260,7 @@ class Instances:
             "hdd": storage,
             "region": region,
             "name": name,
-            "is_reserved": is_reserved,
+            "is_reserved": True,
             "duration": "hour",
             "disk_type": disk_type,
             "http_ports": http_ports,
@@ -271,7 +313,6 @@ class Instances:
         num_gpus: int | None = None,
         storage: int | None = None,
         name: str | None = None,
-        is_reserved: bool | None = None,
         script_id: str | None = None,
         script_args: str | None = None,
         fs_id: int | None = None,
@@ -299,7 +340,7 @@ class Instances:
             "machine_id": machine_id,
             "gpu_type": gpu_type or instance.gpu_type,
             "num_gpus": num_gpus or instance.num_gpus,
-            "is_reserved": is_reserved if is_reserved is not None else instance.is_reserved,
+            "is_reserved": True,
             "hdd": storage or instance.storage_gb,
             "name": name or instance.name,
             "duration": "hour",
@@ -382,6 +423,18 @@ def _coerce_script_bytes(script: bytes | bytearray | str) -> bytes:
     if not content.strip():
         raise ValidationError("Script content cannot be empty")
     return content
+
+
+def _validate_filesystem_name(fs_name: str) -> None:
+    if not fs_name or not fs_name.strip():
+        raise ValidationError("Filesystem name cannot be empty")
+    if len(fs_name) > 30:
+        raise ValidationError("Filesystem name must be 30 characters or fewer")
+
+
+def _validate_filesystem_storage(storage: int) -> None:
+    if storage < 50 or storage > 2048:
+        raise ValidationError("Filesystem storage must be between 50GB and 2048GB")
 
 
 def _normalize_success(data: dict) -> bool:

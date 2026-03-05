@@ -45,10 +45,10 @@ Generate a token from [here](https://jarvislabs.ai/settings/api-keys).
 | gpu_type            | str  | Choose from **A100**, **A100-80GB**, **RTX6000Ada**, **A5000**, **A6000**, **RTX5000**, **L4**, **H100**, **H200**. | RTX5000       |
 | template            | str  | Use `User.get_templates()` to get all templates.                          | pytorch       |
 | script_id           | str  | Use `User.get_scripts()` to get all script ids and pass it.                                     | None          |
-| is_reserved         | bool | True refers to an on-demand instance. False refers to a spot instance.    | True          |
-| duration            | str  | Choose hour, week, and month. The pricing changes based on the duration.. | hour          |
 | http_ports          | str  | As per your requirement, you can specify the ports.                       | None          |
 | storage             | int  | Choose between 20GB to 2TB.                                               | 20            |
+
+Note: SDK create/resume is reserved-only (`is_reserved=True`) and currently uses hourly duration.
 
 ```python
 # CPU Instance Example

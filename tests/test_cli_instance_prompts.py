@@ -24,6 +24,7 @@ def test_instance_create_prompt_includes_storage_and_core_fields(monkeypatch):
             num_gpus=2,
             script_id=None,
             script_args="",
+            fs_id=None,
         )
 
     assert captured["msg"] == "Create instance (gpu=2x RTX5000, template=pytorch, storage=60GB, name='train-job')?"
@@ -47,11 +48,12 @@ def test_instance_create_prompt_lists_script_fields_when_provided(monkeypatch):
             num_gpus=2,
             script_id="11",
             script_args="--foo bar",
+            fs_id=7,
         )
 
     assert (
         captured["msg"]
-        == "Create instance (gpu=2x RTX5000, template=pytorch, storage=60GB, name='train-job', script_id=11, script_args='--foo bar')?"
+        == "Create instance (gpu=2x RTX5000, template=pytorch, storage=60GB, name='train-job', script_id=11, script_args='--foo bar', fs_id=7)?"
     )
 
 
@@ -73,6 +75,7 @@ def test_instance_resume_prompt_defaults_to_current_configuration(monkeypatch):
             name=None,
             script_id=None,
             script_args=None,
+            fs_id=None,
         )
 
     assert captured["msg"] == "Resume instance 123 with current configuration?"
@@ -96,6 +99,7 @@ def test_instance_resume_prompt_lists_all_requested_changes(monkeypatch):
             name="new-name",
             script_id=None,
             script_args=None,
+            fs_id=None,
         )
 
     assert captured["msg"] == "Resume instance 42 with gpu=H100, num_gpus=4, storage=120GB, name='new-name'?"
@@ -119,9 +123,10 @@ def test_instance_resume_prompt_includes_script_changes(monkeypatch):
             name=None,
             script_id="9",
             script_args="--dry-run",
+            fs_id=12,
         )
 
-    assert captured["msg"] == "Resume instance 42 with script_id=9, script_args='--dry-run'?"
+    assert captured["msg"] == "Resume instance 42 with script_id=9, script_args='--dry-run', fs_id=12?"
 
 
 @pytest.mark.parametrize(

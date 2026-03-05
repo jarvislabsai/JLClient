@@ -185,6 +185,23 @@ def scripts_table(scripts: list) -> None:
     stdout_console.print(table)
 
 
+def filesystems_table(filesystems: list) -> None:
+    if not filesystems:
+        info("No filesystems found.")
+        return
+
+    table = _table("Filesystems")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Name", style="bold")
+    table.add_column("Storage", justify="right")
+
+    for filesystem in filesystems:
+        storage = f"{filesystem.storage}GB" if filesystem.storage is not None else "—"
+        table.add_row(str(filesystem.fs_id), filesystem.fs_name or "—", storage)
+
+    stdout_console.print(table)
+
+
 def gpu_table(gpus: list, currency: str = "USD") -> None:
     if not gpus:
         info("No GPU data available.")
