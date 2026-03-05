@@ -1,6 +1,6 @@
 """Root Typer app — entry point for the `jl` CLI.
 
-Global flags (--json, --yes, --verbose, --token) are handled here via callback.
+Global flags (--json, --yes, --token) are handled here via callback.
 Subcommands are registered from commands.py and instance.py.
 """
 
