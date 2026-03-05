@@ -423,7 +423,11 @@ class TestCreatePayload:
     @patch("jarvislabs.client._get_instance")
     @patch("jarvislabs.client._poll_until_running")
     def test_all_params(self, _poll, mock_get, mock_transport):
-        mock_transport.request.return_value = {"machine_id": 1}
+        mock_transport.request.side_effect = [
+            {"server_meta": []},
+            [{"fs_id": 7}],
+            {"machine_id": 1},
+        ]
         mock_get.return_value = MagicMock(machine_id=1)
 
         _make_instances(mock_transport).create(
@@ -450,6 +454,15 @@ class TestCreatePayload:
         assert payload["script_args"] == "--flag"
         assert payload["fs_id"] == 7
         assert payload["arguments"] == "--arg"
+
+    @patch("jarvislabs.client._resolve_region", return_value="india-01")
+    def test_invalid_fs_id_raises(self, _region, mock_transport):
+        mock_transport.request.return_value = [{"fs_id": 7}]
+
+        with pytest.raises(ValidationError, match="Filesystem 999 not found"):
+            _make_instances(mock_transport).create(gpu_type="RTX5000", fs_id=999)
+
+        mock_transport.request.assert_called_once_with("GET", "filesystem/list")
 
     @patch("jarvislabs.client._get_instance")
     @patch("jarvislabs.client._poll_until_running")
@@ -508,6 +521,15 @@ class TestResumePayload:
         mock_get.return_value = running
         with pytest.raises(ValidationError, match="Paused"):
             _make_instances(mock_transport).resume(10)
+
+    def test_invalid_fs_id_raises(self, mock_transport):
+        instances = self._setup_resume(mock_transport)
+        mock_transport.request.side_effect = [[{"fs_id": 7}]]
+
+        with pytest.raises(ValidationError, match="Filesystem 999 not found"):
+            instances.resume(10, fs_id=999)
+
+        mock_transport.request.assert_called_once_with("GET", "filesystem/list")
 
 
 class TestRenameInstance:

@@ -1,243 +1,108 @@
-# JLclient
+# jarvislabs
 
-Interacting with Jarvislabs.ai for creating GPU/CPU powered instances on top of A100, A6000, RTX 5000 and RTX6000Ada.
+CLI and Python SDK for managing JarvisLabs GPU instances.
 
 ## Installation
 
-```shell
+From source:
 
-
-
-pip install git+https://github.com/jarvislabsai/jlclient.git
-
-
-
+```bash
+uv pip install -e .
 ```
 
-### Imports and configure
+As a package:
+
+```bash
+uv pip install jarvislabs
+```
+
+## Authentication
+
+```bash
+jl login
+```
+
+Or set an env var:
+
+```bash
+export JL_API_KEY="<your_api_key>"
+```
+
+## CLI Quick Start
+
+Show top-level help and command groups:
+
+```bash
+jl --help
+jl instance --help
+jl scripts --help
+jl filesystem --help
+```
+
+Common commands:
+
+```bash
+jl status
+jl gpus
+jl templates
+jl instance list
+jl scripts list
+jl filesystem list
+```
+
+Instance lifecycle:
+
+```bash
+jl instance create --gpu RTX5000 --storage 40 --name my-instance
+jl instance pause <machine_id>
+jl instance resume <machine_id>
+jl instance destroy <machine_id>
+```
+
+Script and filesystem integration:
+
+```bash
+jl scripts add ./startup.sh --name setup-script
+jl filesystem create --name data --storage 120
+jl instance create --gpu RTX5000 --script-id <script_id> --fs-id <fs_id>
+```
+
+## SDK Quick Start
 
 ```python
+from jarvislabs import Client
 
-
-
-from jlclient import jarvisclient
-
-from jlclient.jarvisclient import *
-
-
-
-jarvisclient.token = '**************************duWRbO68IiMTkQKWi48'
-
-
-
+with Client() as client:
+    instances = client.instances.list()
+    print([i.machine_id for i in instances])
 ```
 
-Generate a token from [here](https://jarvislabs.ai/settings/api-keys).
-
-## Managing GPU/CPU powered instances on Jarvislabs.ai
-
-### Create
-
-| Parameter           | Type | Description/Values                                                        | Default Value |
-| ------------------- | ---- | ------------------------------------------------------------------------- | ------------- |
-| instance_type       | str  | Choose between GPU or CPU.                                                | GPU           |
-| num_gpus / num_cpus | int  | Choose between 1 to 8 for GPU instance.                                   | 1             |
-| gpu_type            | str  | Choose from **A100**, **A100-80GB**, **RTX6000Ada**, **A5000**, **A6000**, **RTX5000**, **L4**, **H100**, **H200**. | RTX5000       |
-| template            | str  | Use `User.get_templates()` to get all templates.                          | pytorch       |
-| script_id           | str  | Use `User.get_scripts()` to get all script ids and pass it.                                     | None          |
-| http_ports          | str  | As per your requirement, you can specify the ports.                       | None          |
-| storage             | int  | Choose between 20GB to 2TB.                                               | 20            |
-
-Note: SDK create/resume is reserved-only (`is_reserved=True`) and currently uses hourly duration.
+Create an instance:
 
 ```python
-# CPU Instance Example
+from jarvislabs import Client
 
-instance: Instance = Instance.create('CPU',
-                            num_cpus=1,
-                            storage=25,
-                            template='pytorch',
-                            name='cpu instance')
-
-
-# GPU Instance Example
-
-instance: Instance = Instance.create('GPU',
-                            gpu_type='RTX6000Ada',
-                            num_gpus=1,
-                            storage=50,
-                            template='pytorch',
-                            name='gpu instance')
-
+with Client() as client:
+    inst = client.instances.create(
+        gpu_type="RTX5000",
+        num_gpus=1,
+        template="pytorch",
+        storage=40,
+        name="my-instance",
+    )
+    print(inst.machine_id, inst.status)
 ```
 
-This should return the Instance object, which includes the following attributes
+## Current Behavior Notes
 
-- gpu_type
-- num_gpus
-- num_cpus
-- storage
-- name
-- machine_id
-- script_id
-- is_reserved
-- duration
-- script_args
-- http_ports
-- template
-- url
-- endpoints
-- ssh_str
-- status
+- Region is internal and auto-resolved in SDK/CLI.
+- `create`/`resume` are reserved-only (`is_reserved=True`).
+- CLI command naming uses `list` consistently (`instance list`, `scripts list`, `filesystem list`).
 
-If the Instance object isn't returned, an error dictionary will be provided.
+## Development
 
-JLClient auto-resolves the best placement from backend capacity data.
-
-For certain high-end capacity pools, JLClient enforces:
-
-- GPU type must be `H100` or `H200`
-- `num_gpus` must be `1` or `8`
-- `storage` must be `>= 100 GB`
-
-For `template='vm'`, JLClient enforces:
-
-- only GPU instances (no CPU vm create)
-- GPU must be `H100` or `H200`
-
-GPU availability is dynamic. If a requested GPU is unavailable at launch time, backend availability errors are returned to the client.
-
-**Note:** Please contact us if you encounter any errors while launching the instance.
-
-### Pause
-
-```python
-
-instance.pause()
-
+```bash
+uv run ruff format .
+uv run ruff check --fix .
+uv run pytest
 ```
-
-#### Pause existing Instance
-
-```python
-
-    # Get the running Instance
-    instance: Instance = User.get_instance(instance_id=12345)
-
-    instance.pause()
-
-
-```
-
-You can call `pause()` on any `Instance` object.
-
-### Resume
-
-```python
-
-#Example 1:
-
-instance.resume()
-
-
-
-#Example 2:
-
-instance.resume(num_gpus=1,
-                gpu_type='RTX5000',
-                storage=100)
-
-
-#Switching GPU to CPU Instance, pass the num_cpus parameter
-
-instance.resume(num_cpus=1,
-                storage=25)
-
-#Switching CPU to GPU Instance, pass the num_gpus & gpu_type
-
-instance.resume(gpu_type='RTX6000Ada',
-                num_gpus=1,
-                storage=25)
-```
-
-#### Resume existing Instance
-
-```python
-
-   # Get the paused Instance
-   instance: Instance = User.get_instance(instance_id=12345)
-
-   # Resuming the old instance
-   new_instance = instance.resume()
-
-```
-
-You can modify an existing instance by changing the below `resume` parameters.
-
-- num_gpus
-
-- gpu_type
-
-- storage
-
-or just call `resume` to start with the same configuration.
-
-### Destroy
-
-```python
-
-instance.destroy()
-
-```
-
-#### Destroy the existing Instance
-
-```python
-
-    # Get the paused or running Instance
-    instance: Instance = User.get_instance(instance_id=12345)
-
-    instance.destroy()
-
-
-```
-
-Invoking the destroy method on any instance object will permanently delete the instance and it cannot be retrieve.
-
-## User management.
-
-The `User` class comes with the below key functionalities.
-
-- `User.get_templates()` : Returns the list of templates.
-
-- `User.get_instances()` : Returns a list of `Instance` objects representing instances in your account.
-
-- `User.get_instance()` : Returns the `Instance` object.
-
-- `User.get_balance()` : Return the balance of the user.
-
--  `User.get_scripts()` : Return the list of scripts of the user
-
-### Get the scripts of the User
-
-```python
-
-scripts = User.get_scripts()
-
-'''
-
-scripts = [{'script_id': 123, 'script_name': 'script1.sh'},
-           {'script_id': 124, 'script_name': 'script2.sh'}]
-
-'''
-```
-
-Invoking `User.get_scripts()` method to retrieve the scripts associated with the User.
-
-## Issues/Feature request
-
-Do you like to see any new features, we are all ears. You can drop us an email to hello@jarvislabs.ai or chat with us for any new features or issues.
-
-## License
-
-This project is licensed under the terms of the MIT license.

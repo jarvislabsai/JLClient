@@ -253,6 +253,8 @@ class Instances:
 
         if template == "vm":
             _preflight_vm(gpu_type, region, self._ssh_keys.list())
+        if fs_id is not None:
+            _ensure_filesystem_exists(self._t, fs_id)
 
         payload: dict = {
             "gpu_type": gpu_type,
@@ -320,6 +322,8 @@ class Instances:
         instance = _get_instance(self._t, machine_id)
         if instance.status != "Paused":
             raise ValidationError(f"Can only resume a Paused instance (current status: {instance.status})")
+        if fs_id is not None:
+            _ensure_filesystem_exists(self._t, fs_id)
 
         # Resume is region-locked — backend always uses instance's original region
         region = instance.region or DEFAULT_REGION
@@ -346,7 +350,7 @@ class Instances:
             "duration": "hour",
             "script_id": script_id,
             "script_args": script_args or "",
-            "fs_id": fs_id or instance.fs_id,
+            "fs_id": fs_id if fs_id is not None else instance.fs_id,
             "arguments": "",
         }
 
@@ -435,6 +439,20 @@ def _validate_filesystem_name(fs_name: str) -> None:
 def _validate_filesystem_storage(storage: int) -> None:
     if storage < 50 or storage > 2048:
         raise ValidationError("Filesystem storage must be between 50GB and 2048GB")
+
+
+def _ensure_filesystem_exists(transport: Transport, fs_id: int) -> None:
+    resp = transport.request("GET", "filesystem/list")
+    if not isinstance(resp, list):
+        raise APIError(0, "Failed to fetch filesystems: unexpected response")
+
+    for item in resp:
+        if not isinstance(item, dict):
+            continue
+        if int(item.get("fs_id", -1)) == fs_id:
+            return
+
+    raise ValidationError(f"Filesystem {fs_id} not found. Check the ID with: jl filesystem list")
 
 
 def _normalize_success(data: dict) -> bool:

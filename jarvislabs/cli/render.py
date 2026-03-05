@@ -185,6 +185,22 @@ def scripts_table(scripts: list) -> None:
     stdout_console.print(table)
 
 
+def templates_table(templates: list) -> None:
+    if not templates:
+        info("No templates found.")
+        return
+
+    table = _table("Templates")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title", style="bold")
+    table.add_column("Category", style="dim")
+
+    for template in templates:
+        table.add_row(template.id, template.title, template.category or "—")
+
+    stdout_console.print(table)
+
+
 def filesystems_table(filesystems: list) -> None:
     if not filesystems:
         info("No filesystems found.")

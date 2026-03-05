@@ -117,13 +117,7 @@ def templates() -> None:
         render.print_json(tpls)
         return
 
-    table = render._table("Templates")
-    table.add_column("ID", style="cyan")
-    table.add_column("Title", style="bold")
-    table.add_column("Category", style="dim")
-    for t in tpls:
-        table.add_row(t.id, t.title, t.category or "—")
-    render.stdout_console.print(table)
+    render.templates_table(tpls)
 
 
 ssh_key_app = typer.Typer(name="ssh-key", help="Manage SSH keys.")

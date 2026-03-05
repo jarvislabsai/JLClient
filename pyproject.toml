@@ -44,7 +44,6 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-extend-exclude = ["jlclient"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "C4", "UP", "SIM", "RUF", "T20", "TC"]
