@@ -2,6 +2,8 @@
 
 CLI and Python SDK for managing JarvisLabs GPU instances.
 
+**[Full Documentation](docs.md)** — complete CLI command reference, SDK API, and examples.
+
 ## Installation
 
 From source:
@@ -53,7 +55,7 @@ jl filesystem list
 Instance lifecycle:
 
 ```bash
-jl instance create --gpu RTX5000 --storage 40 --name my-instance
+jl instance create --gpu A100 --storage 40 --name my-instance
 jl instance pause <machine_id>
 jl instance resume <machine_id>
 jl instance destroy <machine_id>
@@ -64,7 +66,7 @@ Script and filesystem integration:
 ```bash
 jl scripts add ./startup.sh --name setup-script
 jl filesystem create --name data --storage 120
-jl instance create --gpu RTX5000 --script-id <script_id> --fs-id <fs_id>
+jl instance create --gpu A100 --script-id <script_id> --fs-id <fs_id>
 ```
 
 ## SDK Quick Start
@@ -84,7 +86,7 @@ from jarvislabs import Client
 
 with Client() as client:
     inst = client.instances.create(
-        gpu_type="RTX5000",
+        gpu_type="A100",
         num_gpus=1,
         template="pytorch",
         storage=40,
