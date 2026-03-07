@@ -1,16 +1,58 @@
-"""Instance lifecycle commands — list, create, rename, pause, resume, destroy, get, ssh."""
+"""Instance commands for lifecycle, SSH, exec, and file transfer."""
 
 from __future__ import annotations
 
+import shlex
 import subprocess
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 import typer
 
 from jarvislabs.cli import render, state
 from jarvislabs.cli.app import app, get_client
+from jarvislabs.exceptions import SSHError, ValidationError
+from jarvislabs.ssh import build_remote_shell_command, build_scp_command, split_ssh_command
+
+if TYPE_CHECKING:
+    from jarvislabs.models import Instance
 
 instance_app = typer.Typer(name="instance", help="Manage GPU instances.")
 app.add_typer(instance_app, rich_help_panel="Infrastructure")
+
+
+def _resolve_ssh(machine_id: int) -> tuple[Instance, list[str]]:
+    client = get_client()
+    with render.spinner("Fetching instance..."):
+        inst = client.instances.get(machine_id)
+
+    if inst.status != "Running":
+        if inst.status == "Paused":
+            render.die(f"Instance {machine_id} is paused. Resume it first: jl instance resume {machine_id}")
+        if inst.status in {"Creating", "Resuming"}:
+            render.die(f"Instance {machine_id} is not ready yet (status: {inst.status}). Wait for it to reach Running.")
+        render.die(f"Instance {machine_id} is not available for SSH (status: {inst.status}).")
+
+    if not inst.ssh_command:
+        render.die(f"Instance {machine_id} has no SSH command (status: {inst.status}).")
+
+    try:
+        return inst, split_ssh_command(inst.ssh_command)
+    except SSHError:
+        render.die(f"Cannot parse SSH command: {inst.ssh_command}")
+
+
+def _default_upload_dest(source: Path) -> str:
+    name = source.name or source.resolve().name
+    return f"/home/{name}"
+
+
+def _default_download_dest(source: str) -> str:
+    cleaned = source.rstrip("/")
+    name = PurePosixPath(cleaned).name
+    if not name:
+        raise ValueError(f"Cannot infer a local destination from remote path: {source}")
+    return name
 
 
 @instance_app.command("list")
@@ -224,11 +266,145 @@ def instance_ssh(
         render.print_json({"ssh_command": inst.ssh_command})
         return
 
-    import shlex
+    if inst.status != "Running":
+        if inst.status == "Paused":
+            render.die(f"Instance {machine_id} is paused. Resume it first: jl instance resume {machine_id}")
+        if inst.status in {"Creating", "Resuming"}:
+            render.die(f"Instance {machine_id} is not ready yet (status: {inst.status}). Wait for it to reach Running.")
+        render.die(f"Instance {machine_id} is not available for SSH (status: {inst.status}).")
 
-    parts = shlex.split(inst.ssh_command)
-    if not parts or parts[0] != "ssh":
+    try:
+        parts = split_ssh_command(inst.ssh_command)
+    except SSHError:
         render.die(f"Cannot parse SSH command: {inst.ssh_command}")
 
     render.info(f"Connecting to {machine_id}...")
+    raise SystemExit(subprocess.call(parts))
+
+
+@instance_app.command(
+    "exec",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def instance_exec(
+    ctx: typer.Context,
+    machine_id: int = typer.Argument(..., help="Instance ID."),
+) -> None:
+    """Execute a command on a running instance."""
+    if not ctx.args:
+        render.die(f"No command specified. Use -- to separate: jl instance exec {machine_id} -- <command>")
+
+    _, parts = _resolve_ssh(machine_id)
+    try:
+        remote_command = build_remote_shell_command(ctx.args)
+    except (SSHError, ValidationError):
+        render.die(f"Cannot prepare SSH command for instance {machine_id}.")
+
+    command_label = shlex.join(ctx.args)
+    parts.append(remote_command)
+
+    if state.json_output:
+        completed = subprocess.run(parts, capture_output=True, text=True, check=False)
+        render.print_json(
+            {
+                "machine_id": machine_id,
+                "command": command_label,
+                "exit_code": completed.returncode,
+            }
+        )
+        if completed.returncode != 0:
+            raise SystemExit(completed.returncode)
+        return
+
+    render.info(f"Executing on {machine_id}: {command_label}")
+    raise SystemExit(subprocess.call(parts))
+
+
+@instance_app.command("upload")
+def instance_upload(
+    machine_id: int = typer.Argument(..., help="Instance ID."),
+    source: Path = typer.Argument(
+        ..., exists=True, readable=True, resolve_path=True, help="Local file or directory to upload."
+    ),
+    dest: str | None = typer.Argument(None, help="Remote destination path. Defaults to /home/<name>."),
+) -> None:
+    """Upload a local file or directory to a running instance."""
+    inst, _ = _resolve_ssh(machine_id)
+    remote_dest = dest or _default_upload_dest(source)
+    recursive = source.is_dir()
+
+    try:
+        parts = build_scp_command(
+            inst.ssh_command,
+            source=str(source),
+            dest=remote_dest,
+            upload=True,
+            recursive=recursive,
+        )
+    except SSHError:
+        render.die(f"Cannot prepare upload command for instance {machine_id}.")
+
+    if state.json_output:
+        completed = subprocess.run(parts, capture_output=True, text=True, check=False)
+        render.print_json(
+            {
+                "machine_id": machine_id,
+                "direction": "upload",
+                "source": str(source),
+                "dest": remote_dest,
+                "recursive": recursive,
+                "exit_code": completed.returncode,
+            }
+        )
+        if completed.returncode != 0:
+            raise SystemExit(completed.returncode)
+        return
+
+    render.info(f"Uploading to {machine_id}: {source} -> {remote_dest}")
+    raise SystemExit(subprocess.call(parts))
+
+
+@instance_app.command("download")
+def instance_download(
+    machine_id: int = typer.Argument(..., help="Instance ID."),
+    source: str = typer.Argument(..., help="Remote file or directory to download."),
+    dest: Path | None = typer.Argument(None, resolve_path=True, help="Local destination path. Defaults to ./<name>."),
+    recursive: bool = typer.Option(False, "--recursive", "-r", help="Download directories recursively."),
+) -> None:
+    """Download a remote file or directory from a running instance."""
+    inst, _ = _resolve_ssh(machine_id)
+
+    try:
+        local_dest = dest or Path(_default_download_dest(source))
+    except ValueError as exc:
+        render.die(str(exc))
+
+    try:
+        parts = build_scp_command(
+            inst.ssh_command,
+            source=source,
+            dest=str(local_dest),
+            upload=False,
+            recursive=recursive,
+        )
+    except SSHError:
+        render.die(f"Cannot prepare download command for instance {machine_id}.")
+
+    if state.json_output:
+        completed = subprocess.run(parts, capture_output=True, text=True, check=False)
+        render.print_json(
+            {
+                "machine_id": machine_id,
+                "direction": "download",
+                "source": source,
+                "dest": str(local_dest),
+                "recursive": recursive,
+                "exit_code": completed.returncode,
+            }
+        )
+        if completed.returncode != 0:
+            raise SystemExit(completed.returncode)
+        return
+
+    render.info(f"Downloading from {machine_id}: {source} -> {local_dest}")
     raise SystemExit(subprocess.call(parts))

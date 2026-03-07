@@ -7,6 +7,9 @@ from jarvislabs.exceptions import (
     InsufficientBalanceError,
     JarvislabsError,
     NotFoundError,
+    SSHAuthError,
+    SSHConnectionError,
+    SSHError,
     ValidationError,
 )
 
@@ -17,5 +20,8 @@ __all__ = [
     "InsufficientBalanceError",
     "JarvislabsError",
     "NotFoundError",
+    "SSHAuthError",
+    "SSHConnectionError",
+    "SSHError",
     "ValidationError",
 ]

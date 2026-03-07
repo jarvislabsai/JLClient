@@ -25,6 +25,18 @@ class ValidationError(JarvislabsError):
     """Client-side validation failure."""
 
 
+class SSHError(JarvislabsError):
+    """Base error for local SSH command parsing/execution failures."""
+
+
+class SSHConnectionError(SSHError):
+    """SSH transport/connectivity failure."""
+
+
+class SSHAuthError(SSHError):
+    """SSH authentication failure."""
+
+
 class APIError(JarvislabsError):
     """HTTP error from the backend that doesn't fit a specific category."""
 
