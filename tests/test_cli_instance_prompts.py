@@ -129,25 +129,40 @@ def test_instance_resume_prompt_includes_script_changes(monkeypatch):
     assert captured["msg"] == "Resume instance 42 with script_id=9, script_args='--dry-run', fs_id=12?"
 
 
-@pytest.mark.parametrize(
-    ("fn", "args", "expected"),
-    [
-        (
-            instance.instance_rename,
-            {"machine_id": 5, "name": "new-name"},
-            "Rename instance 5 to 'new-name'?",
-        ),
-        (instance.instance_pause, {"machine_id": 7}, "Pause instance 7?"),
-        (instance.instance_destroy, {"machine_id": 9}, "Destroy instance 9? This cannot be undone."),
-    ],
-)
-def test_instance_pause_destroy_prompts(fn, args, expected, monkeypatch):
+def test_instance_rename_prompt(monkeypatch):
     captured: dict[str, str] = {}
 
     def fake_confirm(msg: str, *, skip: bool = False) -> bool:
         captured["msg"] = msg
         return False
 
+    monkeypatch.setattr(instance.render, "confirm", fake_confirm)
+
+    with pytest.raises(typer.Exit):
+        instance.instance_rename(machine_id=5, name="new-name")
+
+    assert captured["msg"] == "Rename instance 5 to 'new-name'?"
+
+
+@pytest.mark.parametrize(
+    ("fn", "args", "expected"),
+    [
+        (instance.instance_pause, {"machine_id": 7}, "Pause instance 7?"),
+        (instance.instance_destroy, {"machine_id": 9}, "Destroy instance 9? This cannot be undone."),
+    ],
+)
+def test_instance_pause_destroy_prompts(fn, args, expected, monkeypatch):
+    """Pause/destroy validate instance existence before prompting."""
+    from unittest.mock import MagicMock
+
+    captured: dict[str, str] = {}
+
+    def fake_confirm(msg: str, *, skip: bool = False) -> bool:
+        captured["msg"] = msg
+        return False
+
+    mock_client = MagicMock()
+    monkeypatch.setattr(instance, "get_client", lambda: mock_client)
     monkeypatch.setattr(instance.render, "confirm", fake_confirm)
 
     with pytest.raises(typer.Exit):

@@ -59,10 +59,10 @@ def test_instance_upload_sets_recursive_for_directories(monkeypatch, tmp_path):
     source.mkdir()
     (source / "train.py").write_text("print('hi')\n")
     inst = SimpleNamespace(status="Running", ssh_command="ssh -p 2222 root@example.com")
-    recorded: dict[str, list[str]] = {}
+    recorded: list[list[str]] = []
 
     def fake_call(parts: list[str]) -> int:
-        recorded["parts"] = parts
+        recorded.append(parts)
         return 0
 
     _patch_common(monkeypatch, inst)
@@ -73,21 +73,90 @@ def test_instance_upload_sets_recursive_for_directories(monkeypatch, tmp_path):
         instance.instance_upload(machine_id=123, source=source, dest="/root/app")
 
     assert exc.value.code == 0
-    assert recorded["parts"] == [
-        "scp",
-        "-P",
-        "2222",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=15",
-        "-o",
-        "ServerAliveInterval=15",
-        "-o",
-        "ServerAliveCountMax=3",
-        "-r",
-        str(source),
-        "root@example.com:/root/app",
+    assert recorded == [
+        [
+            "ssh",
+            "-p",
+            "2222",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "root@example.com",
+            "sh -lc 'mkdir -p /root/app'",
+        ],
+        [
+            "scp",
+            "-P",
+            "2222",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-r",
+            str(source),
+            "root@example.com:/root/app",
+        ],
+    ]
+
+
+def test_instance_upload_creates_parent_dirs_for_explicit_file_dest(monkeypatch, tmp_path):
+    source = tmp_path / "train.py"
+    source.write_text("print('hi')\n")
+    inst = SimpleNamespace(status="Running", ssh_command="ssh -p 2222 root@example.com")
+    recorded: list[list[str]] = []
+
+    def fake_call(parts: list[str]) -> int:
+        recorded.append(parts)
+        return 0
+
+    _patch_common(monkeypatch, inst)
+    monkeypatch.setattr(instance.subprocess, "call", fake_call)
+    monkeypatch.setattr(state, "json_output", False)
+
+    with pytest.raises(SystemExit) as exc:
+        instance.instance_upload(machine_id=123, source=source, dest="/home/test-upload/train.py")
+
+    assert exc.value.code == 0
+    assert recorded == [
+        [
+            "ssh",
+            "-p",
+            "2222",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "root@example.com",
+            "sh -lc 'mkdir -p /home/test-upload'",
+        ],
+        [
+            "scp",
+            "-P",
+            "2222",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=15",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            str(source),
+            "root@example.com:/home/test-upload/train.py",
+        ],
     ]
 
 

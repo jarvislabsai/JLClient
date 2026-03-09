@@ -569,7 +569,11 @@ def _poll_until_running(transport: Transport, machine_id: int, region: str) -> N
 
         time.sleep(POLL_INTERVAL_S)
 
-    raise APIError(0, f"Timed out after {timeout}s waiting for instance {machine_id} to start. Try again later.")
+    raise APIError(
+        0,
+        f"Timed out after {timeout}s waiting for instance {machine_id} to start. "
+        f"It may still come up shortly. Check it with: jl instance get {machine_id}",
+    )
 
 
 def _fetch_instances(transport: Transport) -> list[Instance]:

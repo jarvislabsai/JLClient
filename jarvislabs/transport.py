@@ -119,5 +119,17 @@ def _extract_error_message(data: dict | list) -> str:
     detail = data.get("detail")
     if isinstance(detail, list):
         # FastAPI RequestValidationError: [{"loc": [...], "msg": "...", "type": "..."}]
-        return "; ".join(item.get("msg", "") if isinstance(item, dict) else str(item) for item in detail)
+        msgs = []
+        for item in detail:
+            if not isinstance(item, dict):
+                msgs.append(str(item))
+                continue
+            msg = item.get("msg", "")
+            # Rewrite raw regex validation into user-friendly messages
+            if "does not match regex" in msg:
+                loc = item.get("loc", [])
+                field = loc[-1] if loc else "value"
+                msg = f"Invalid {field}"
+            msgs.append(msg)
+        return "; ".join(msgs)
     return data.get("message") or data.get("error") or detail or "Unknown error"

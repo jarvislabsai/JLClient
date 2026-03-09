@@ -340,6 +340,11 @@ def _status_style(status: str) -> str:
 
 
 def die(msg: str, code: int = 1) -> None:
-    """Print error and exit."""
-    error(msg)
+    """Print error and exit. Emits JSON to stdout when --json is active."""
+    from jarvislabs.cli import state
+
+    if state.json_output:
+        print_json({"error": msg})
+    else:
+        error(msg)
     sys.exit(code)

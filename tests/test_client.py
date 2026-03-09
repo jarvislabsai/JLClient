@@ -247,7 +247,7 @@ class TestPollUntilRunning:
         with (
             patch("jarvislabs.client.time.monotonic", side_effect=[0, 100, 200]),
             patch("jarvislabs.client.time.sleep"),
-            pytest.raises(APIError, match="Timed out"),
+            pytest.raises(APIError, match=r"Timed out.*jl instance get 1"),
         ):
             _poll_until_running(mock_transport, machine_id=1, region="india-01")
 
@@ -256,7 +256,7 @@ class TestPollUntilRunning:
         with (
             patch("jarvislabs.client.time.monotonic", side_effect=[0, 250, 301]),
             patch("jarvislabs.client.time.sleep"),
-            pytest.raises(APIError, match=r"Timed out.*Try again later"),
+            pytest.raises(APIError, match=r"Timed out.*jl instance get 1"),
         ):
             _poll_until_running(mock_transport, machine_id=1, region=EUROPE_REGION)
 

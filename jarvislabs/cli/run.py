@@ -7,6 +7,7 @@ import secrets
 import shlex
 import shutil
 import subprocess
+import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -17,7 +18,7 @@ from typer.core import TyperGroup
 
 from jarvislabs.cli import render, state
 from jarvislabs.cli.app import app, get_client
-from jarvislabs.cli.instance import _default_upload_dest, _resolve_ssh
+from jarvislabs.cli.instance import _default_upload_dest
 from jarvislabs.exceptions import JarvislabsError, SSHError
 from jarvislabs.ssh import build_rsync_upload_command, build_scp_command, harden_ssh_parts, split_ssh_command
 
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 
 _REMOTE_RUNS_ROOT = PurePosixPath("/home/.jl/runs")
 _LOCAL_RUNS_ROOT = Path.home() / ".jl" / "runs"
+_DEFAULT_FOLLOW_TAIL_LINES = 20
 
 
 class RunCommandGroup(TyperGroup):
@@ -35,6 +37,29 @@ class RunCommandGroup(TyperGroup):
             cmd = self.get_command(ctx, default_command)
             return default_command, cmd, args
         return super().resolve_command(ctx, args)
+
+    def get_help(self, ctx):  # type: ignore[override]
+        help_text = super().get_help(ctx).rstrip()
+        start_help = (
+            "\n\n"
+            "Start a run directly:\n"
+            "  jl run TARGET --on <instance_id> [-- script args]\n"
+            "  jl run TARGET --gpu <gpu> [-- script args]\n\n"
+            "Common examples:\n"
+            "  jl run train.py --gpu RTX5000\n"
+            "  jl run train.py --gpu RTX5000 -- --epochs 5\n"
+            "  jl run . --script train.py --on 382707\n"
+            "  jl run --on 382707 -- python -c \"print('hi')\"\n\n"
+            "Key start options:\n"
+            "  --on INTEGER           Run on an existing instance.\n"
+            "  --gpu TEXT             Create a fresh instance with this GPU.\n"
+            "  --script TEXT          Script path inside a directory target.\n"
+            "  --requirements PATH    Upload and install a local requirements file.\n"
+            "  --setup TEXT           Shell command to run before the main command.\n"
+            "  --setup-file PATH      Local bash file to run before the main command.\n"
+            "  --follow / --no-follow Stream logs after starting the run.\n"
+        )
+        return help_text + start_help
 
 
 run_app = typer.Typer(
@@ -290,7 +315,43 @@ def _resolve_run_ssh(run_id: str) -> tuple[LocalRunRecord, list[str]]:
     return record, ssh_parts
 
 
-def _build_run_spec(target: str | None, extra_args: list[str], *, script_path: str | None = None) -> RunSpec:
+def _with_setup(command: str, setup_command: str | None) -> str:
+    if not setup_command:
+        return command
+    return f"{setup_command} && {command}"
+
+
+def _resolve_local_input(path: str | None, *, label: str) -> Path | None:
+    if path is None:
+        return None
+    resolved = Path(path).expanduser()
+    if not resolved.exists():
+        render.die(f"{label} does not exist: {path}")
+    if not resolved.is_file():
+        render.die(f"{label} must be a file: {path}")
+    return resolved
+
+
+def _entrypoint_command(path: str, extra_args: list[str]) -> str:
+    suffix = Path(path).suffix
+    if suffix == ".py":
+        parts = ["python", path, *extra_args]
+    elif suffix == ".sh":
+        parts = ["bash", path, *extra_args]
+    else:
+        render.die(
+            "Only Python or bash entrypoints are supported directly. "
+            "Use --script <train.py|train.sh> or pass a full command after --."
+        )
+    return shlex.join(parts)
+
+
+def _build_run_spec(
+    target: str | None,
+    extra_args: list[str],
+    *,
+    script_path: str | None = None,
+) -> RunSpec:
     if target is None:
         if script_path is not None:
             render.die("--script can only be used with a directory target.")
@@ -308,7 +369,7 @@ def _build_run_spec(target: str | None, extra_args: list[str], *, script_path: s
 
     local_target = Path(target).expanduser()
     if not local_target.exists():
-        looks_like_path = "/" in target or target.startswith(".") or target.endswith(".py")
+        looks_like_path = "/" in target or target.startswith(".") or target.endswith((".py", ".sh"))
         if looks_like_path:
             render.die(f"Target does not exist: {target}")
         if script_path is not None:
@@ -324,7 +385,7 @@ def _build_run_spec(target: str | None, extra_args: list[str], *, script_path: s
     if local_target.is_dir():
         remote_target = _default_upload_dest(local_target)
         if script_path:
-            launch_command = shlex.join(["python", script_path, *extra_args])
+            launch_command = _entrypoint_command(script_path, extra_args)
         elif extra_args:
             launch_command = shlex.join(extra_args)
         else:
@@ -343,19 +404,20 @@ def _build_run_spec(target: str | None, extra_args: list[str], *, script_path: s
     if script_path is not None:
         render.die("--script can only be used with a directory target.")
 
-    if local_target.suffix != ".py":
+    if local_target.suffix not in {".py", ".sh"}:
         render.die(
-            "Only Python file targets are supported directly right now. "
+            "Only Python or bash file targets are supported directly right now. "
             "Use a directory target or the instance upload/exec primitives for other files."
         )
 
-    remote_target = _default_upload_dest(local_target)
+    remote_root = PurePosixPath("/home") / (local_target.stem or local_target.name)
+    remote_target = (remote_root / local_target.name).as_posix()
     return RunSpec(
         target_kind="file",
         local_target=local_target,
         remote_target=remote_target,
-        working_dir=PurePosixPath(remote_target).parent.as_posix(),
-        launch_command=shlex.join(["python", remote_target, *extra_args]),
+        working_dir=remote_root.as_posix(),
+        launch_command=_entrypoint_command(local_target.name, extra_args),
     )
 
 
@@ -364,7 +426,7 @@ def _parse_run_inputs(raw_args: list[str]) -> tuple[str | None, list[str]]:
         return None, []
 
     candidate = raw_args[0]
-    looks_like_path = "/" in candidate or candidate.startswith(".") or candidate.endswith(".py")
+    looks_like_path = "/" in candidate or candidate.startswith(".") or candidate.endswith((".py", ".sh"))
     if looks_like_path or Path(candidate).expanduser().exists():
         return candidate, raw_args[1:]
     return None, raw_args
@@ -409,7 +471,7 @@ cleanup() {{
 
 trap cleanup INT TERM
 
-sh -lc "cd $WORKDIR && exec $COMMAND" >>"$LOG_FILE" 2>&1 &
+sh -lc "cd $WORKDIR && $COMMAND" >>"$LOG_FILE" 2>&1 &
 child_pid=$!
 printf '%s\\n' "$child_pid" >"$PID_FILE"
 wait "$child_pid"
@@ -452,8 +514,86 @@ def _prepare_remote_target(inst, ssh_parts: list[str], spec: RunSpec) -> None:
         return
 
     render.info(f"Uploading file to {spec.remote_target}")
+    remote_parent = PurePosixPath(spec.remote_target).parent.as_posix()
+    if _run_remote(ssh_parts, f"mkdir -p {shlex.quote(remote_parent)}") != 0:
+        render.die(f"Failed to prepare remote directory {remote_parent}.")
     if _upload_to_remote(inst.ssh_command, spec.local_target, spec.remote_target, recursive=False) != 0:
         render.die(f"Failed to upload {spec.local_target} to instance {inst.machine_id}.")
+
+
+def _upload_support_file(inst, ssh_parts: list[str], source: Path, destination: str, *, label: str) -> None:
+    render.info(f"Uploading {label} to {destination}")
+    remote_parent = PurePosixPath(destination).parent.as_posix()
+    if _run_remote(ssh_parts, f"mkdir -p {shlex.quote(remote_parent)}") != 0:
+        render.die(f"Failed to prepare remote directory {remote_parent}.")
+    if _upload_to_remote(inst.ssh_command, source, destination, recursive=False) != 0:
+        render.die(f"Failed to upload {label} to instance {inst.machine_id}.")
+
+
+def _prepare_support_files(
+    inst,
+    ssh_parts: list[str],
+    spec: RunSpec,
+    *,
+    requirements_path: Path | None,
+    setup_file: Path | None,
+) -> tuple[str | None, str | None]:
+    if requirements_path is None and setup_file is None:
+        return None, None
+
+    if spec.working_dir is None:
+        render.die("--requirements and --setup-file require a file or directory target.")
+
+    remote_requirements = None
+    if requirements_path is not None:
+        remote_requirements = requirements_path.name
+        _upload_support_file(
+            inst,
+            ssh_parts,
+            requirements_path,
+            (PurePosixPath(spec.working_dir) / requirements_path.name).as_posix(),
+            label="requirements file",
+        )
+
+    remote_setup_file = None
+    if setup_file is not None:
+        remote_setup_file = setup_file.name
+        _upload_support_file(
+            inst,
+            ssh_parts,
+            setup_file,
+            (PurePosixPath(spec.working_dir) / setup_file.name).as_posix(),
+            label="setup file",
+        )
+
+    return remote_requirements, remote_setup_file
+
+
+def _compose_launch_command(
+    spec: RunSpec,
+    *,
+    setup_command: str | None,
+    requirements_name: str | None,
+    setup_file_name: str | None,
+) -> str:
+    if spec.target_kind == "command":
+        if requirements_name or setup_file_name:
+            render.die("--requirements and --setup-file require a file or directory target.")
+        return _with_setup(spec.launch_command, setup_command)
+
+    commands = [
+        "(command -v uv >/dev/null 2>&1 || python -m pip install -U uv)",
+        "(test -d .venv || uv venv .venv)",
+        ". .venv/bin/activate",
+    ]
+    if requirements_name:
+        commands.append(f"uv pip install -r {shlex.quote(requirements_name)}")
+    if setup_file_name:
+        commands.append(f"bash {shlex.quote(setup_file_name)}")
+    if setup_command:
+        commands.append(setup_command)
+    commands.append(spec.launch_command)
+    return " && ".join(commands)
 
 
 def _start_remote_run(ssh_parts: list[str], paths: RunPaths) -> int:
@@ -476,7 +616,7 @@ def _start_remote_run(ssh_parts: list[str], paths: RunPaths) -> int:
 def _follow_run_logs(ssh_parts: list[str], paths: RunPaths) -> bool:
     script = (
         f"touch {shlex.quote(paths.remote_log)}; "
-        f"tail -n +1 -F {shlex.quote(paths.remote_log)} & "
+        f"tail -n {_DEFAULT_FOLLOW_TAIL_LINES} -F {shlex.quote(paths.remote_log)} & "
         "tail_pid=$!; "
         f"while [ ! -f {shlex.quote(paths.remote_exit_code)} ]; do sleep 1; done; "
         "sleep 1; "
@@ -499,7 +639,9 @@ def _tail_remote_log(
 ) -> subprocess.CompletedProcess[str] | int:
     if follow:
         if tail is None:
-            script = f"touch {shlex.quote(remote_log)} && tail -n +1 -F {shlex.quote(remote_log)}"
+            script = (
+                f"touch {shlex.quote(remote_log)} && tail -n {_DEFAULT_FOLLOW_TAIL_LINES} -F {shlex.quote(remote_log)}"
+            )
         else:
             script = f"touch {shlex.quote(remote_log)} && tail -n {tail} -F {shlex.quote(remote_log)}"
         return _run_remote(ssh_parts, script)
@@ -523,17 +665,19 @@ def _print_run_followups(run_id: str, *, include_list: bool = False) -> None:
         render.console.print("  [dim]All runs[/dim] [bold green]jl run list[/bold green]")
 
 
-def _stop_remote_run(ssh_parts: list[str], pid_file: str) -> str:
+def _stop_remote_run(ssh_parts: list[str], pid_file: str, exit_code_file: str) -> str:
     script = (
+        f"if [ -f {shlex.quote(exit_code_file)} ]; then echo finished; exit 0; fi; "
         f"if [ ! -f {shlex.quote(pid_file)} ]; then echo missing-pid; exit 3; fi; "
         f"pid=$(cat {shlex.quote(pid_file)}); "
         'if [ -z "$pid" ]; then echo missing-pid; exit 3; fi; '
         'if kill -0 "$pid" 2>/dev/null; then kill "$pid" && echo stopped && exit 0; fi; '
+        f"if [ -f {shlex.quote(exit_code_file)} ]; then echo finished; exit 0; fi; "
         "echo not-running; exit 4"
     )
     completed = _run_remote_capture(ssh_parts, script)
     output = completed.stdout.strip()
-    if output in {"stopped", "not-running", "missing-pid"}:
+    if output in {"stopped", "not-running", "missing-pid", "finished"}:
         return output
     return "error"
 
@@ -541,6 +685,33 @@ def _stop_remote_run(ssh_parts: list[str], pid_file: str) -> str:
 def _print_detach_instructions(machine_id: int, paths: RunPaths) -> None:
     render.warning(f"Detached from logs. Run {paths.run_id} is still running on instance {machine_id}.")
     _print_run_followups(paths.run_id, include_list=True)
+
+
+def _wait_for_ssh_ready(machine_id: int, *, timeout_s: int = 90, poll_s: int = 3) -> tuple[Instance, list[str]]:
+    deadline = time.monotonic() + timeout_s
+    last_status = "unknown"
+
+    while time.monotonic() < deadline:
+        inst = _get_instance(machine_id)
+        if inst is None:
+            render.die(f"Instance {machine_id} no longer exists.")
+
+        last_status = inst.status
+        if inst.status == "Paused":
+            render.die(f"Instance {machine_id} is paused. Resume it first: jl instance resume {machine_id}")
+        if inst.status != "Running":
+            render.die(f"Instance {machine_id} is not available for runs yet (status: {inst.status}).")
+
+        ssh_parts = _ssh_parts_from_instance(inst)
+        if ssh_parts is not None and _run_remote_capture(ssh_parts, "true").returncode == 0:
+            return inst, ssh_parts
+
+        time.sleep(poll_s)
+
+    render.die(
+        f"Instance {machine_id} is {last_status}, but SSH is not ready yet. "
+        f"Wait a bit and retry, or check it with: jl instance exec {machine_id} -- echo ok"
+    )
 
 
 def _start_managed_run(
@@ -552,8 +723,11 @@ def _start_managed_run(
     instance_origin: str,
     lifecycle_policy: str,
     script_path: str | None = None,
+    setup_command: str | None = None,
+    requirements_path: Path | None = None,
+    setup_file: Path | None = None,
 ) -> tuple[str, int | None]:
-    inst, ssh_parts = _resolve_ssh(machine_id)
+    inst, ssh_parts = _wait_for_ssh_ready(machine_id)
     spec = _build_run_spec(target, extra_args, script_path=script_path)
     paths = _build_run_paths(_make_run_id())
 
@@ -562,6 +736,25 @@ def _start_managed_run(
         render.die(f"Failed to create remote run directory {paths.remote_run_dir}.")
 
     _prepare_remote_target(inst, ssh_parts, spec)
+    requirements_name, setup_file_name = _prepare_support_files(
+        inst,
+        ssh_parts,
+        spec,
+        requirements_path=requirements_path,
+        setup_file=setup_file,
+    )
+    spec = RunSpec(
+        target_kind=spec.target_kind,
+        local_target=spec.local_target,
+        remote_target=spec.remote_target,
+        working_dir=spec.working_dir,
+        launch_command=_compose_launch_command(
+            spec,
+            setup_command=setup_command,
+            requirements_name=requirements_name,
+            setup_file_name=setup_file_name,
+        ),
+    )
     _write_remote_wrapper(ssh_parts, paths, spec)
     _write_remote_metadata(ssh_parts, inst, paths, spec)
 
@@ -658,11 +851,7 @@ def _apply_lifecycle(machine_id: int, policy: str) -> None:
         render.success(f"Instance {machine_id} destroyed after the run.")
 
 
-@run_app.command(
-    "start",
-    hidden=True,
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)
+@run_app.command("start", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run_start(
     ctx: typer.Context,
     on: int | None = typer.Option(None, "--on", help="Run on an existing instance."),
@@ -676,6 +865,17 @@ def run_start(
     storage: int = typer.Option(40, "--storage", "-s", help="Storage in GB for fresh instances."),
     name: str = typer.Option("jl-run", "--name", "-n", help="Instance name for fresh runs."),
     num_gpus: int = typer.Option(1, "--num-gpus", help="Number of GPUs for fresh runs."),
+    setup: str | None = typer.Option(None, "--setup", help="Shell command to run before the main command."),
+    requirements: str | None = typer.Option(
+        None,
+        "--requirements",
+        help="Local requirements file to upload and install into the run .venv.",
+    ),
+    setup_file: str | None = typer.Option(
+        None,
+        "--setup-file",
+        help="Local bash file to upload and run inside the stable project directory before the main command.",
+    ),
     pause: bool = typer.Option(False, "--pause", help="Pause a fresh instance after the run completes."),
     destroy: bool = typer.Option(False, "--destroy", help="Destroy a fresh instance after the run completes."),
     keep: bool = typer.Option(False, "--keep", help="Leave a fresh instance running after the run completes."),
@@ -683,6 +883,8 @@ def run_start(
 ) -> None:
     """Start a managed run."""
     target, extra_args = _parse_run_inputs(list(ctx.args))
+    requirements_path = _resolve_local_input(requirements, label="Requirements file")
+    setup_file_path = _resolve_local_input(setup_file, label="Setup file")
 
     lifecycle = _pick_lifecycle_policy(pause=pause, destroy=destroy, keep=keep)
 
@@ -700,6 +902,9 @@ def run_start(
             instance_origin="existing",
             lifecycle_policy="none",
             script_path=script,
+            setup_command=setup,
+            requirements_path=requirements_path,
+            setup_file=setup_file_path,
         )
         if exit_code not in (None, 0):
             raise SystemExit(exit_code)
@@ -742,6 +947,9 @@ def run_start(
             instance_origin="fresh",
             lifecycle_policy=lifecycle,
             script_path=script,
+            setup_command=setup,
+            requirements_path=requirements_path,
+            setup_file=setup_file_path,
         )
     except SystemExit:
         render.warning(
@@ -764,9 +972,12 @@ def run_start(
 @run_app.command("list")
 def run_list(
     refresh: bool = typer.Option(False, "--refresh", help="Refresh live status for each run. Can be slow."),
+    machine: int | None = typer.Option(None, "--machine", "-m", help="Filter by instance ID."),
 ) -> None:
     """List locally tracked managed runs."""
     records = _iter_local_runs()
+    if machine is not None:
+        records = [r for r in records if r.machine_id == machine]
     if state.json_output:
         payload = []
         for record in records:
@@ -841,13 +1052,14 @@ def run_logs(
     record, ssh_parts = _resolve_run_ssh(run_id)
     if state.json_output:
         completed = _tail_remote_log(ssh_parts, record.remote_log, follow=False, tail=tail)
+        run_exit_code = _fetch_exit_code_path(ssh_parts, record.remote_exit_code)
         render.print_json(
             {
                 "run_id": record.run_id,
                 "machine_id": record.machine_id,
                 "remote_log": record.remote_log,
                 "content": completed.stdout,
-                "exit_code": completed.returncode,
+                "run_exit_code": run_exit_code,
             }
         )
         if completed.returncode != 0:
@@ -858,6 +1070,10 @@ def run_logs(
         render.info(
             f"Following logs for run {record.run_id} on instance {record.machine_id}. Press Ctrl+C to stop streaming."
         )
+        if tail is None:
+            render.info(
+                f"Showing the latest {_DEFAULT_FOLLOW_TAIL_LINES} log lines first. Use --tail N to change this."
+            )
         _print_run_followups(record.run_id, include_list=True)
 
     try:
@@ -910,9 +1126,22 @@ def run_stop(
         return
 
     resolved_record, ssh_parts = _resolve_run_ssh(run_id)
-    stop_status = _stop_remote_run(ssh_parts, resolved_record.remote_pid)
+    stop_status = _stop_remote_run(ssh_parts, resolved_record.remote_pid, resolved_record.remote_exit_code)
 
     if state.json_output:
+        if stop_status == "finished":
+            refreshed = _get_run_snapshot(resolved_record)
+            render.print_json(
+                {
+                    "run_id": resolved_record.run_id,
+                    "machine_id": resolved_record.machine_id,
+                    "state": refreshed.state,
+                    "exit_code": refreshed.exit_code,
+                    "stop_status": stop_status,
+                    "stopped": False,
+                }
+            )
+            return
         render.print_json(
             {
                 "run_id": resolved_record.run_id,
@@ -929,6 +1158,9 @@ def run_stop(
     if stop_status == "stopped":
         render.success(f"Stop signal sent to run {resolved_record.run_id} on instance {resolved_record.machine_id}.")
         render.info("The process may take a moment to exit cleanly.")
+    elif stop_status == "finished":
+        refreshed = _get_run_snapshot(resolved_record)
+        render.info(f"Run {resolved_record.run_id} already finished with state {refreshed.state}.")
     elif stop_status == "not-running":
         render.warning(f"Run {resolved_record.run_id} no longer has a live process to stop.")
     elif stop_status == "missing-pid":

@@ -156,10 +156,13 @@ def instance_pause(
     machine_id: int = typer.Argument(..., help="Instance ID to pause."),
 ) -> None:
     """Pause a running instance."""
+    client = get_client()
+    with render.spinner("Checking instance..."):
+        client.instances.get(machine_id)
+
     if not render.confirm(f"Pause instance {machine_id}?", skip=state.yes):
         raise typer.Exit()
 
-    client = get_client()
     with render.spinner("Pausing instance..."):
         client.instances.pause(machine_id)
 
@@ -215,6 +218,9 @@ def instance_resume(
             fs_id=fs_id,
         )
 
+    if inst.machine_id != machine_id:
+        render.warning(f"Instance ID changed: {machine_id} → {inst.machine_id}")
+
     if state.json_output:
         render.print_json(inst)
         return
@@ -228,13 +234,16 @@ def instance_destroy(
     machine_id: int = typer.Argument(..., help="Instance ID to destroy."),
 ) -> None:
     """Permanently destroy an instance."""
+    client = get_client()
+    with render.spinner("Checking instance..."):
+        client.instances.get(machine_id)
+
     if not render.confirm(
         f"Destroy instance {machine_id}? This cannot be undone.",
         skip=state.yes,
     ):
         raise typer.Exit()
 
-    client = get_client()
     with render.spinner("Destroying instance..."):
         client.instances.destroy(machine_id)
 
@@ -331,9 +340,18 @@ def instance_upload(
     dest: str | None = typer.Argument(None, help="Remote destination path. Defaults to /home/<name>."),
 ) -> None:
     """Upload a local file or directory to a running instance."""
-    inst, _ = _resolve_ssh(machine_id)
+    inst, ssh_parts = _resolve_ssh(machine_id)
     remote_dest = dest or _default_upload_dest(source)
     recursive = source.is_dir()
+
+    if dest is not None:
+        if recursive:
+            remote_prep = remote_dest.rstrip("/") or remote_dest
+        else:
+            remote_prep = PurePosixPath(remote_dest).parent.as_posix()
+        prep_command = build_remote_shell_command(["mkdir", "-p", remote_prep])
+        if subprocess.call([*ssh_parts, prep_command]) != 0:
+            render.die(f"Failed to prepare remote destination {remote_prep}.")
 
     try:
         parts = build_scp_command(

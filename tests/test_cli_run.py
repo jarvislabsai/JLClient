@@ -4,8 +4,21 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from typer.testing import CliRunner
 
 from jarvislabs.cli import run, state
+from jarvislabs.cli.app import app
+
+runner = CliRunner()
+
+
+def test_run_help_shows_direct_start_usage():
+    result = runner.invoke(app, ["run", "--help"])
+
+    assert result.exit_code == 0
+    assert "Start a run directly:" in result.output
+    assert "jl run train.py --gpu RTX5000" in result.output
+    assert "--requirements PATH" in result.output
 
 
 def test_run_start_requires_existing_instance_for_now(monkeypatch):
@@ -22,6 +35,14 @@ def test_run_start_requires_existing_instance_for_now(monkeypatch):
             SimpleNamespace(args=["train.py"]),
             on=None,
             gpu=None,
+            script=None,
+            template="pytorch",
+            storage=40,
+            name="jl-run",
+            num_gpus=1,
+            setup=None,
+            requirements=None,
+            setup_file=None,
             pause=False,
             destroy=False,
             keep=False,
@@ -43,9 +64,21 @@ def test_build_run_spec_for_python_file(monkeypatch, tmp_path):
 
     assert spec.target_kind == "file"
     assert spec.local_target == source
-    assert spec.remote_target == f"/home/{source.name}"
-    assert spec.working_dir == "/home"
-    assert spec.launch_command == f"python /home/{source.name} --epochs 5"
+    assert spec.remote_target == f"/home/{source.stem}/{source.name}"
+    assert spec.working_dir == f"/home/{source.stem}"
+    assert spec.launch_command == f"python {source.name} --epochs 5"
+
+
+def test_build_run_spec_for_bash_file(tmp_path):
+    source = tmp_path / "train.sh"
+    source.write_text("echo hi\n")
+
+    spec = run._build_run_spec(str(source), ["--fast"])
+
+    assert spec.target_kind == "file"
+    assert spec.remote_target == "/home/train/train.sh"
+    assert spec.working_dir == "/home/train"
+    assert spec.launch_command == "bash train.sh --fast"
 
 
 def test_build_run_spec_for_directory_uses_stable_home_path(monkeypatch, tmp_path):
@@ -73,6 +106,19 @@ def test_build_run_spec_for_directory_with_script_option(tmp_path):
     assert spec.remote_target == "/home/project"
     assert spec.working_dir == "/home/project"
     assert spec.launch_command == "python scripts/train.py --epochs 5"
+
+
+def test_build_run_spec_for_directory_with_bash_script_option(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "train.sh").write_text("echo hi\n")
+
+    spec = run._build_run_spec(str(project), ["--epochs", "5"], script_path="scripts/train.sh")
+
+    assert spec.target_kind == "directory"
+    assert spec.remote_target == "/home/project"
+    assert spec.working_dir == "/home/project"
+    assert spec.launch_command == "bash scripts/train.sh --epochs 5"
 
 
 def test_build_run_spec_treats_non_path_target_as_raw_command():
@@ -198,7 +244,9 @@ def test_start_managed_run_for_file_launches_detached_and_saves_local_record(mon
     inst = SimpleNamespace(machine_id=123, ssh_command="ssh -p 2222 root@example.com")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(run, "_resolve_ssh", lambda machine_id: (inst, ["ssh", "-p", "2222", "root@example.com"]))
+    monkeypatch.setattr(
+        run, "_wait_for_ssh_ready", lambda machine_id: (inst, ["ssh", "-p", "2222", "root@example.com"])
+    )
     monkeypatch.setattr(run, "_make_run_id", lambda: "r_test123")
     monkeypatch.setattr(run, "_run_remote", lambda ssh_parts, script: 0)
     monkeypatch.setattr(run, "_prepare_remote_target", lambda inst, ssh_parts, spec: captured.setdefault("spec", spec))
@@ -229,12 +277,12 @@ def test_start_managed_run_for_file_launches_detached_and_saves_local_record(mon
 
     spec = captured["spec"]
     assert spec.target_kind == "file"
-    assert spec.remote_target == "/home/train.py"
-    assert spec.launch_command == "python /home/train.py --epochs 5"
+    assert spec.remote_target == "/home/train/train.py"
+    assert spec.launch_command == "python train.py --epochs 5"
     record = captured["record"]
     assert record.run_id == "r_test123"
     assert record.machine_id == 123
-    assert record.remote_target == "/home/train.py"
+    assert record.remote_target == "/home/train/train.py"
     assert record.remote_log == "/home/.jl/runs/r_test123/output.log"
     assert record.instance_origin == "existing"
     assert record.lifecycle_policy == "none"
@@ -250,7 +298,9 @@ def test_start_managed_run_json_mode_returns_summary(monkeypatch, tmp_path):
     inst = SimpleNamespace(machine_id=123, ssh_command="ssh -p 2222 root@example.com")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(run, "_resolve_ssh", lambda machine_id: (inst, ["ssh", "-p", "2222", "root@example.com"]))
+    monkeypatch.setattr(
+        run, "_wait_for_ssh_ready", lambda machine_id: (inst, ["ssh", "-p", "2222", "root@example.com"])
+    )
     monkeypatch.setattr(run, "_make_run_id", lambda: "r_json")
     monkeypatch.setattr(run, "_run_remote", lambda ssh_parts, script: 0)
     monkeypatch.setattr(run, "_prepare_remote_target", lambda inst, ssh_parts, spec: None)
@@ -278,7 +328,12 @@ def test_start_managed_run_json_mode_returns_summary(monkeypatch, tmp_path):
         "remote_exit_code": "/home/.jl/runs/r_json/exit_code",
         "target_kind": "directory",
         "remote_target": "/home/project",
-        "command": "python train.py",
+        "command": (
+            "(command -v uv >/dev/null 2>&1 || python -m pip install -U uv) && "
+            "(test -d .venv || uv venv .venv) && "
+            ". .venv/bin/activate && "
+            "python train.py"
+        ),
         "instance_origin": "fresh",
         "lifecycle_policy": "keep",
     }
@@ -293,15 +348,15 @@ def test_iter_local_runs_sorts_newest_first(monkeypatch, tmp_path):
         machine_id=1,
         target_kind="file",
         local_target="/tmp/old.py",
-        remote_target="/home/old.py",
-        working_dir="/home",
+        remote_target="/home/old/old.py",
+        working_dir="/home/old",
         remote_run_dir="/home/.jl/runs/r_old",
         remote_log="/home/.jl/runs/r_old/output.log",
         remote_pid="/home/.jl/runs/r_old/pid",
         remote_exit_code="/home/.jl/runs/r_old/exit_code",
         remote_meta="/home/.jl/runs/r_old/meta.json",
         remote_wrapper="/home/.jl/runs/r_old/run.sh",
-        launch_command="python /home/old.py",
+        launch_command="python old.py",
         started_at="2026-03-08T10:00:00+00:00",
     )
     newer = run.LocalRunRecord(
@@ -336,15 +391,15 @@ def test_get_run_snapshot_reports_running(monkeypatch):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_run",
         remote_log="/home/.jl/runs/r_run/output.log",
         remote_pid="/home/.jl/runs/r_run/pid",
         remote_exit_code="/home/.jl/runs/r_run/exit_code",
         remote_meta="/home/.jl/runs/r_run/meta.json",
         remote_wrapper="/home/.jl/runs/r_run/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     monkeypatch.setattr(
@@ -365,15 +420,15 @@ def test_get_run_snapshot_reports_instance_paused(monkeypatch):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_paused",
         remote_log="/home/.jl/runs/r_paused/output.log",
         remote_pid="/home/.jl/runs/r_paused/pid",
         remote_exit_code="/home/.jl/runs/r_paused/exit_code",
         remote_meta="/home/.jl/runs/r_paused/meta.json",
         remote_wrapper="/home/.jl/runs/r_paused/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     monkeypatch.setattr(
@@ -391,15 +446,15 @@ def test_run_logs_json_returns_content(monkeypatch):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_logs",
         remote_log="/home/.jl/runs/r_logs/output.log",
         remote_pid="/home/.jl/runs/r_logs/pid",
         remote_exit_code="/home/.jl/runs/r_logs/exit_code",
         remote_meta="/home/.jl/runs/r_logs/meta.json",
         remote_wrapper="/home/.jl/runs/r_logs/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     captured: dict[str, object] = {}
@@ -410,6 +465,7 @@ def test_run_logs_json_returns_content(monkeypatch):
         "_tail_remote_log",
         lambda ssh_parts, remote_log, *, follow, tail: SimpleNamespace(stdout="hello\n", returncode=0),
     )
+    monkeypatch.setattr(run, "_fetch_exit_code_path", lambda ssh_parts, path: 0)
     monkeypatch.setattr(run.render, "print_json", lambda payload: captured.setdefault("payload", payload))
     monkeypatch.setattr(state, "json_output", True)
 
@@ -420,7 +476,7 @@ def test_run_logs_json_returns_content(monkeypatch):
         "machine_id": 123,
         "remote_log": "/home/.jl/runs/r_logs/output.log",
         "content": "hello\n",
-        "exit_code": 0,
+        "run_exit_code": 0,
     }
 
 
@@ -430,15 +486,15 @@ def test_run_logs_follow_shows_followups(monkeypatch):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_logs",
         remote_log="/home/.jl/runs/r_logs/output.log",
         remote_pid="/home/.jl/runs/r_logs/pid",
         remote_exit_code="/home/.jl/runs/r_logs/exit_code",
         remote_meta="/home/.jl/runs/r_logs/meta.json",
         remote_wrapper="/home/.jl/runs/r_logs/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     captured: list[str] = []
@@ -454,7 +510,8 @@ def test_run_logs_follow_shows_followups(monkeypatch):
 
     assert exc.value.code == 0
     assert captured[0] == "Following logs for run r_logs on instance 123. Press Ctrl+C to stop streaming."
-    assert "Run ID: r_logs" in captured[1]
+    assert "Showing the latest 20 log lines first." in captured[1]
+    assert "Run ID: r_logs" in captured[2]
 
 
 def test_run_list_does_not_refresh_by_default(monkeypatch, tmp_path):
@@ -464,15 +521,15 @@ def test_run_list_does_not_refresh_by_default(monkeypatch, tmp_path):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_saved",
         remote_log="/home/.jl/runs/r_saved/output.log",
         remote_pid="/home/.jl/runs/r_saved/pid",
         remote_exit_code="/home/.jl/runs/r_saved/exit_code",
         remote_meta="/home/.jl/runs/r_saved/meta.json",
         remote_wrapper="/home/.jl/runs/r_saved/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     (tmp_path / "r_saved.json").write_text(json.dumps(run.asdict(record)))
@@ -510,15 +567,15 @@ def test_run_stop_reports_completed_run(monkeypatch):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_done",
         remote_log="/home/.jl/runs/r_done/output.log",
         remote_pid="/home/.jl/runs/r_done/pid",
         remote_exit_code="/home/.jl/runs/r_done/exit_code",
         remote_meta="/home/.jl/runs/r_done/meta.json",
         remote_wrapper="/home/.jl/runs/r_done/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     captured: list[str] = []
@@ -554,15 +611,15 @@ def test_run_stop_sends_term_to_running_process(monkeypatch):
         machine_id=123,
         target_kind="file",
         local_target="/tmp/train.py",
-        remote_target="/home/train.py",
-        working_dir="/home",
+        remote_target="/home/train/train.py",
+        working_dir="/home/train",
         remote_run_dir="/home/.jl/runs/r_live",
         remote_log="/home/.jl/runs/r_live/output.log",
         remote_pid="/home/.jl/runs/r_live/pid",
         remote_exit_code="/home/.jl/runs/r_live/exit_code",
         remote_meta="/home/.jl/runs/r_live/meta.json",
         remote_wrapper="/home/.jl/runs/r_live/run.sh",
-        launch_command="python /home/train.py",
+        launch_command="python train.py",
         started_at="2026-03-09T10:00:00+00:00",
     )
     captured: dict[str, str] = {}
@@ -584,7 +641,7 @@ def test_run_stop_sends_term_to_running_process(monkeypatch):
         ),
     )
     monkeypatch.setattr(run, "_resolve_run_ssh", lambda run_id: (record, ["ssh", "root@example.com"]))
-    monkeypatch.setattr(run, "_stop_remote_run", lambda ssh_parts, pid_file: "stopped")
+    monkeypatch.setattr(run, "_stop_remote_run", lambda ssh_parts, pid_file, exit_code_file: "stopped")
     monkeypatch.setattr(run.render, "success", lambda message: captured.setdefault("success", message))
     monkeypatch.setattr(run.render.console, "print", lambda message: None)
     monkeypatch.setattr(state, "json_output", False)
@@ -609,7 +666,19 @@ def test_run_start_defaults_fresh_runs_to_pause(monkeypatch):
         lambda: SimpleNamespace(instances=SimpleNamespace(create=lambda **kwargs: inst)),
     )
 
-    def fake_start(target, machine_id, extra_args, *, follow, instance_origin, lifecycle_policy, script_path=None):
+    def fake_start(
+        target,
+        machine_id,
+        extra_args,
+        *,
+        follow,
+        instance_origin,
+        lifecycle_policy,
+        script_path=None,
+        setup_command=None,
+        requirements_path=None,
+        setup_file=None,
+    ):
         captured["start"] = {
             "target": target,
             "machine_id": machine_id,
@@ -618,6 +687,9 @@ def test_run_start_defaults_fresh_runs_to_pause(monkeypatch):
             "instance_origin": instance_origin,
             "lifecycle_policy": lifecycle_policy,
             "script_path": script_path,
+            "setup_command": setup_command,
+            "requirements_path": requirements_path,
+            "setup_file": setup_file,
         }
         return "r_fresh", 0
 
@@ -631,6 +703,13 @@ def test_run_start_defaults_fresh_runs_to_pause(monkeypatch):
         on=None,
         gpu="RTX5000",
         script=None,
+        template="pytorch",
+        storage=40,
+        name="jl-run",
+        num_gpus=1,
+        setup=None,
+        requirements=None,
+        setup_file=None,
         pause=False,
         destroy=False,
         keep=False,
@@ -640,3 +719,88 @@ def test_run_start_defaults_fresh_runs_to_pause(monkeypatch):
     assert captured["start"]["lifecycle_policy"] == "pause"
     assert captured["apply"] == (123, "pause")
     assert any("Defaulting to --pause" in message for message in captured["info"])
+
+
+def test_compose_launch_command_bootstraps_uv_env():
+    spec = run.RunSpec(
+        target_kind="directory",
+        local_target=None,
+        remote_target="/home/project",
+        working_dir="/home/project",
+        launch_command="python train.py --epochs 5",
+    )
+
+    command = run._compose_launch_command(
+        spec,
+        setup_command="echo setup",
+        requirements_name="requirements.txt",
+        setup_file_name="bootstrap.sh",
+    )
+
+    assert command == (
+        "(command -v uv >/dev/null 2>&1 || python -m pip install -U uv) && "
+        "(test -d .venv || uv venv .venv) && "
+        ". .venv/bin/activate && "
+        "uv pip install -r requirements.txt && "
+        "bash bootstrap.sh && "
+        "echo setup && "
+        "python train.py --epochs 5"
+    )
+
+
+def test_prepare_support_files_uploads_requirements_and_setup(monkeypatch, tmp_path):
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("transformers\n")
+    setup_file = tmp_path / "setup.sh"
+    setup_file.write_text("echo setup\n")
+    inst = SimpleNamespace(machine_id=123, ssh_command="ssh root@example.com")
+    spec = run.RunSpec(
+        target_kind="directory",
+        local_target=tmp_path,
+        remote_target="/home/project",
+        working_dir="/home/project",
+        launch_command="python train.py",
+    )
+    uploads: list[tuple[str, str, str]] = []
+
+    monkeypatch.setattr(
+        run,
+        "_upload_support_file",
+        lambda inst, ssh_parts, source, destination, *, label: uploads.append((label, str(source), destination)),
+    )
+
+    requirements_name, setup_name = run._prepare_support_files(
+        inst,
+        ["ssh", "root@example.com"],
+        spec,
+        requirements_path=requirements,
+        setup_file=setup_file,
+    )
+
+    assert requirements_name == "requirements.txt"
+    assert setup_name == "setup.sh"
+    assert uploads == [
+        ("requirements file", str(requirements), "/home/project/requirements.txt"),
+        ("setup file", str(setup_file), "/home/project/setup.sh"),
+    ]
+
+
+def test_wait_for_ssh_ready_retries_until_remote_probe_succeeds(monkeypatch):
+    inst = SimpleNamespace(status="Running", ssh_command="ssh -p 2222 root@example.com")
+    attempts = {"count": 0}
+
+    monkeypatch.setattr(run, "_get_instance", lambda machine_id: inst)
+    monkeypatch.setattr(run, "_ssh_parts_from_instance", lambda inst: ["ssh", "root@example.com"])
+
+    def fake_probe(ssh_parts, script):
+        attempts["count"] += 1
+        return SimpleNamespace(returncode=0 if attempts["count"] == 2 else 255)
+
+    monkeypatch.setattr(run, "_run_remote_capture", fake_probe)
+    monkeypatch.setattr(run.time, "sleep", lambda seconds: None)
+
+    resolved, ssh_parts = run._wait_for_ssh_ready(123, timeout_s=1, poll_s=0)
+
+    assert resolved is inst
+    assert ssh_parts == ["ssh", "root@example.com"]
+    assert attempts["count"] == 2
