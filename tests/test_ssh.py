@@ -3,7 +3,15 @@ from __future__ import annotations
 import pytest
 
 from jarvislabs.exceptions import SSHError, ValidationError
-from jarvislabs.ssh import SSHInfo, build_remote_shell_command, build_scp_command, parse_ssh_command, split_ssh_command
+from jarvislabs.ssh import (
+    SSHInfo,
+    build_remote_shell_command,
+    build_rsync_upload_command,
+    build_scp_command,
+    harden_ssh_parts,
+    parse_ssh_command,
+    split_ssh_command,
+)
 
 
 def test_split_ssh_command_valid():
@@ -88,7 +96,13 @@ def test_build_scp_command_for_upload_preserves_ssh_options():
         "-P",
         "2222",
         "-o",
+        "BatchMode=yes",
+        "-o",
         "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
         "/tmp/train.py",
         "root@example.com:~/train.py",
     ]
@@ -110,7 +124,77 @@ def test_build_scp_command_for_download_recursive():
         "ConnectTimeout=20",
         "-P",
         "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
         "-r",
         "root@example.com:/root/output",
         "output",
+    ]
+
+
+def test_build_rsync_upload_command_preserves_ssh_transport():
+    command = build_rsync_upload_command(
+        "ssh -o StrictHostKeyChecking=no -p 2222 root@example.com",
+        source="/tmp/project",
+        dest="/home/project",
+    )
+    assert command == [
+        "rsync",
+        "-az",
+        "-e",
+        "ssh -o StrictHostKeyChecking=no -p 2222 -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3",
+        "--delete",
+        "/tmp/project/",
+        "root@example.com:/home/project/",
+    ]
+
+
+def test_harden_ssh_parts_adds_safe_defaults():
+    parts = harden_ssh_parts(["ssh", "-p", "2222", "root@example.com"])
+    assert parts == [
+        "ssh",
+        "-p",
+        "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+        "root@example.com",
+    ]
+
+
+def test_harden_ssh_parts_preserves_existing_values():
+    parts = harden_ssh_parts(
+        [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=30",
+            "-o",
+            "ServerAliveInterval=20",
+            "-o",
+            "ServerAliveCountMax=4",
+            "root@example.com",
+        ]
+    )
+    assert parts == [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=30",
+        "-o",
+        "ServerAliveInterval=20",
+        "-o",
+        "ServerAliveCountMax=4",
+        "root@example.com",
     ]

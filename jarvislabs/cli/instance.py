@@ -12,7 +12,7 @@ import typer
 from jarvislabs.cli import render, state
 from jarvislabs.cli.app import app, get_client
 from jarvislabs.exceptions import SSHError, ValidationError
-from jarvislabs.ssh import build_remote_shell_command, build_scp_command, split_ssh_command
+from jarvislabs.ssh import build_remote_shell_command, build_scp_command, harden_ssh_parts, split_ssh_command
 
 if TYPE_CHECKING:
     from jarvislabs.models import Instance
@@ -37,7 +37,7 @@ def _resolve_ssh(machine_id: int) -> tuple[Instance, list[str]]:
         render.die(f"Instance {machine_id} has no SSH command (status: {inst.status}).")
 
     try:
-        return inst, split_ssh_command(inst.ssh_command)
+        return inst, harden_ssh_parts(split_ssh_command(inst.ssh_command))
     except SSHError:
         render.die(f"Cannot parse SSH command: {inst.ssh_command}")
 
@@ -274,7 +274,7 @@ def instance_ssh(
         render.die(f"Instance {machine_id} is not available for SSH (status: {inst.status}).")
 
     try:
-        parts = split_ssh_command(inst.ssh_command)
+        parts = harden_ssh_parts(split_ssh_command(inst.ssh_command))
     except SSHError:
         render.die(f"Cannot parse SSH command: {inst.ssh_command}")
 
@@ -310,6 +310,8 @@ def instance_exec(
                 "machine_id": machine_id,
                 "command": command_label,
                 "exit_code": completed.returncode,
+                "stdout": getattr(completed, "stdout", ""),
+                "stderr": getattr(completed, "stderr", ""),
             }
         )
         if completed.returncode != 0:

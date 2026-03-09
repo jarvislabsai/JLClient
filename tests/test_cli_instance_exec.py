@@ -96,6 +96,14 @@ def test_instance_exec_runs_remote_command(monkeypatch):
         "StrictHostKeyChecking=no",
         "-p",
         "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
         "root@example.com",
         build_remote_shell_command(["python", "train.py", "--epochs", "10"]),
     ]
@@ -110,7 +118,7 @@ def test_instance_exec_json_mode_returns_summary(monkeypatch):
         captured["capture_output"] = capture_output
         captured["text"] = text
         captured["check"] = check
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stdout="hello\n", stderr="")
 
     _patch_common(monkeypatch, inst)
     monkeypatch.setattr(instance.subprocess, "run", fake_run)
@@ -123,6 +131,14 @@ def test_instance_exec_json_mode_returns_summary(monkeypatch):
         "ssh",
         "-p",
         "2222",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
         "root@example.com",
         build_remote_shell_command(["python", "train.py"]),
     ]
@@ -133,6 +149,8 @@ def test_instance_exec_json_mode_returns_summary(monkeypatch):
         "machine_id": 123,
         "command": "python train.py",
         "exit_code": 0,
+        "stdout": "hello\n",
+        "stderr": "",
     }
 
 
