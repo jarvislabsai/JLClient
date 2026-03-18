@@ -3,19 +3,23 @@ from jlclient import jarvisclient
 import time
 token = None
 DEFAULT_REGION = 'india-01'
+INDIA_NOIDA_REGION = 'india-noida-01'
 EUROPE_REGION = 'europe-01'
 EUROPE_GPU_TYPES = {'H100', 'H200'}
 EUROPE_GPU_COUNTS = {1, 8}
 EUROPE_MIN_STORAGE_GB = 100
+VM_SUPPORTED_REGIONS = {EUROPE_REGION, INDIA_NOIDA_REGION}
 
 
 def _default_region_for_gpu(gpu_type):
     return EUROPE_REGION if gpu_type in EUROPE_GPU_TYPES else DEFAULT_REGION
 
 
-def _resolve_region(instance_type, gpu_type, num_gpus):
+def _resolve_region(instance_type, gpu_type, num_gpus, template=None):
     is_cpu_request = (instance_type or '').lower() == 'cpu'
     fallback_region = DEFAULT_REGION if is_cpu_request else _default_region_for_gpu(gpu_type)
+    if template == 'vm':
+        fallback_region = INDIA_NOIDA_REGION if gpu_type not in EUROPE_GPU_TYPES else EUROPE_REGION
 
     try:
         meta = get('misc/server_meta', jarvisclient.token)
@@ -30,6 +34,9 @@ def _resolve_region(instance_type, gpu_type, num_gpus):
         server for server in meta.get('server_meta', [])
         if server.get('gpu_type') == gpu_type and server.get('region')
     ]
+    # VM template is only supported in specific regions
+    if template == 'vm':
+        candidates = [s for s in candidates if s.get('region') in VM_SUPPORTED_REGIONS]
     if not candidates:
         return fallback_region
 
@@ -42,7 +49,7 @@ def _resolve_region(instance_type, gpu_type, num_gpus):
 
 
 def _validate_europe_nebius_request(region, gpu_type, num_gpus, storage):
-    # Keep client-side guardrails aligned with Europe (Nebius) backend expectations.
+    # Client-side guardrails for Europe region constraints.
     if region != EUROPE_REGION:
         return
 
@@ -63,11 +70,49 @@ def _validate_template_region_request(template, instance_type, gpu_type, region)
     if (instance_type or '').lower() != 'gpu':
         raise ValueError("template='vm' supports only GPU instances.")
 
-    if gpu_type not in EUROPE_GPU_TYPES:
-        raise ValueError("template='vm' supports only H100/H200.")
+    if region and region not in VM_SUPPORTED_REGIONS:
+        supported = ', '.join(sorted(VM_SUPPORTED_REGIONS))
+        raise ValueError(f"template='vm' is supported only in: {supported}")
 
-    if region and region != EUROPE_REGION:
-        raise ValueError("template='vm' is supported only in europe-01.")
+
+def _validate_filesystem_region(fs_id, target_region):
+    """Check that a filesystem is in the same region as the target instance."""
+    if fs_id is None:
+        return
+    try:
+        filesystems = get('filesystem/list', jarvisclient.token)
+        if not isinstance(filesystems, list):
+            return
+        for fs in filesystems:
+            if str(fs.get('fs_id')) == str(fs_id):
+                fs_region = fs.get('region')
+                if fs_region and fs_region != target_region:
+                    raise ValueError(
+                        f"Filesystem {fs_id} is in {fs_region}, but the instance is in "
+                        f"{target_region}. Filesystems can only be attached to instances "
+                        f"in the same region."
+                    )
+                return
+    except ValueError:
+        raise
+    except Exception:
+        return  # Can't validate — let the server decide
+
+
+def _normalize_duration(raw):
+    """Backend stores 'Hourly' but resume schema expects 'hour'."""
+    mapping = {'hourly': 'hour', 'weekly': 'week', 'monthly': 'month'}
+    if isinstance(raw, str):
+        return mapping.get(raw.lower(), raw)
+    return 'hour'
+
+
+def _fetch_instance_by_id(machine_id):
+    """Fetch a single instance by machine_id."""
+    resp = get(f'users/fetch/{machine_id}', jarvisclient.token)
+    if isinstance(resp, dict) and resp.get('success'):
+        return resp.get('instance')
+    return None
 
 
 def _extract_error_message(resp):
@@ -94,7 +139,7 @@ class Instance(object):
                  http_ports: str = '',
                  template: str = ''
                  ):
-        
+
         self.gpu_type = gpu_type
         self.num_gpus = num_gpus
         self.num_cpus = num_cpus
@@ -111,7 +156,36 @@ class Instance(object):
         self.endpoints = endpoints
         self.ssh_str = ssh_str
         self.status = status
+        self.fs_id = None
+        self.disk_type = None
         self.region = DEFAULT_REGION
+
+    def _refresh(self):
+        """Fetch fresh instance data and update self.
+
+        Ensures region, template, and all other fields are current before
+        lifecycle operations (pause/resume/destroy).
+        """
+        details = _fetch_instance_by_id(self.machine_id)
+        if not details:
+            raise InstanceCreationException(f"Instance {self.machine_id} not found")
+
+        self.gpu_type = details.get('gpu_type', self.gpu_type)
+        self.num_gpus = details.get('num_gpus', self.num_gpus)
+        self.hdd = int(details.get('hdd') or self.hdd)
+        self.name = details.get('instance_name', self.name)
+        self.url = details.get('url', self.url)
+        self.ssh_str = details.get('ssh_str', self.ssh_str)
+        self.status = details.get('status', self.status)
+        self.template = details.get('framework', self.template)
+        self.region = details.get('region', self.region)
+        self.is_reserved = details.get('is_reserved', self.is_reserved)
+        self.duration = _normalize_duration(details.get('frequency') or self.duration)
+        self.http_ports = details.get('http_ports') or self.http_ports
+        self.fs_id = details.get('fs_id', self.fs_id)
+        self.endpoints = details.get('endpoints', self.endpoints)
+        self.disk_type = details.get('disk_type', self.disk_type)
+        return self
 
     def pause(self):
         '''
@@ -119,22 +193,30 @@ class Instance(object):
         Returns:
             status: Returns the pause status of the machine --> success or failed.
         '''
+        try:
+            self._refresh()
+        except (InstanceCreationException, Exception) as e:
+            return {'error_message': f"Failed to fetch instance before pause: {e}"}
         # UI parity: VM uses template route, everything else uses misc route.
         endpoint = 'templates/vm/pause' if self.template == 'vm' else 'misc/pause'
-        pause_response = post({}, endpoint, 
+        pause_response = post({}, endpoint,
                               jarvisclient.token,
                               query_params={'machine_id':f'{self.machine_id}'},
                               base_url=get_base_url(self.region))
         if pause_response.get('success'):
             self.status = 'Paused'
         return pause_response
-    
+
     def destroy(self):
         '''
-        Destroy the running or paused machine. 
+        Destroy the running or paused machine.
         Returns:
             status:  Returns the destroy status of the machine --> success or failed.
         '''
+        try:
+            self._refresh()
+        except (InstanceCreationException, Exception) as e:
+            return {'error_message': f"Failed to fetch instance before destroy: {e}"}
         # UI parity: VM uses template route, everything else uses misc route.
         endpoint = 'templates/vm/destroy' if self.template == 'vm' else 'misc/destroy'
         destroy_response = post({},
@@ -145,7 +227,7 @@ class Instance(object):
         if destroy_response.get('success'):
             self.status = 'Destroyed'
         return destroy_response
-    
+
     def update_instance_meta(self,req,machine_details):
         self.machine_id = machine_details.get('machine_id')
         self.gpu_type = req.get('gpu_type')
@@ -159,9 +241,11 @@ class Instance(object):
         self.ssh_str = machine_details.get('ssh_str')
         self.status = machine_details.get('status')
         self.machine_id=machine_details.get('machine_id')
-        self.duration=machine_details.get('frequency')
+        self.duration=_normalize_duration(machine_details.get('frequency') or 'hour')
         self.template=machine_details.get('framework')
         self.region = machine_details.get('region', self.region)
+        self.http_ports = machine_details.get('http_ports') or self.http_ports
+        self.fs_id = machine_details.get('fs_id', self.fs_id)
 
     def resume(self,
                storage: int=None,
@@ -173,8 +257,17 @@ class Instance(object):
                script_args: str=None,
                is_reserved: bool=None,
                duration: str=None,
-               fs_id: str=None
+               fs_id: str=None,
+               http_ports: str=None
                ):
+        try:
+            self._refresh()
+        except (InstanceCreationException, Exception) as e:
+            return {'error_message': f"Failed to fetch instance before resume: {e}"}
+
+        if fs_id is not None:
+            _validate_filesystem_region(fs_id, self.region)
+
         resume_req = {
             'machine_id': self.machine_id,
             'hdd' :  storage or self.hdd,
@@ -182,10 +275,11 @@ class Instance(object):
             'script_id' :  script_id or self.script_id,
             'script_args' : script_args or self.script_args,
             'duration' : duration or self.duration,
+            'http_ports' : http_ports if http_ports is not None else (self.http_ports or ''),
             'gpu_type': None,
             'num_gpus': None,
             'num_cpus': None,
-            'fs_id': fs_id
+            'fs_id': fs_id if fs_id is not None else self.fs_id
         }
 
         if num_cpus or self.gpu_type == 'CPU' and not num_gpus:
@@ -194,7 +288,7 @@ class Instance(object):
             resume_req['gpu_type'] = gpu_type if gpu_type else self.gpu_type
             resume_req['num_gpus'] = num_gpus if num_gpus else self.num_gpus
             resume_req['is_reserved'] = is_reserved if is_reserved is not None else self.is_reserved
-        
+
         try:
             _validate_europe_nebius_request(region=self.region,
                                             gpu_type=resume_req.get('gpu_type'),
@@ -205,28 +299,28 @@ class Instance(object):
             if 'machine_id' not in resume_resp:
                 return {'error_message': _extract_error_message(resume_resp)}
             self.machine_id = resume_resp['machine_id']
-            machine_details = Instance.get_instance_details(machine_id=self.machine_id, region=self.region)
+            machine_details = Instance.get_instance_details(machine_id=self.machine_id)
             self.update_instance_meta(req=resume_req,machine_details=machine_details)
             return self
 
         except ValueError as e:
             return {'error_message': str(e)}
-        
+
         except InstanceCreationException as e:
             return {'error_message': str(e)}
 
         except Exception as e:
-            return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
+            return {'error_message' : f"Unexpected error: {e}"}
 
     def get_instance_details(machine_id, region=DEFAULT_REGION):
         max_attempts = 18
 
         for _ in range(max_attempts):
+            # Use the default endpoint — returns instances from all regions.
             machine_status_response = get('users/fetch',
-                                      jarvisclient.token,
-                                      base_url=get_base_url(region))
-            
-            matching_instances = [instance for instance in machine_status_response['instances'] 
+                                      jarvisclient.token)
+
+            matching_instances = [instance for instance in machine_status_response['instances']
                                 if instance.get('machine_id') == machine_id]
             machine_details = matching_instances[0] if matching_instances else None
             if machine_details and machine_details.get('status') == 'Running':
@@ -243,7 +337,7 @@ class Instance(object):
     def create(cls,
                instance_type :str,
                gpu_type: str = 'RTX5000',
-               template: str = 'pytorch', 
+               template: str = 'pytorch',
                num_gpus: int = 1,
                num_cpus: int = 1,
                storage: int = 20,
@@ -259,7 +353,12 @@ class Instance(object):
                ):
         resolved_region = region if region else _resolve_region(instance_type=instance_type,
                                                                  gpu_type=gpu_type,
-                                                                 num_gpus=num_gpus)
+                                                                 num_gpus=num_gpus,
+                                                                 template=template)
+
+        if fs_id is not None:
+            _validate_filesystem_region(fs_id, resolved_region)
+
         req_data = {'hdd':storage,
                     'name':name,
                     'script_id':script_id,
@@ -300,31 +399,35 @@ class Instance(object):
             if 'machine_id' not in resp:
                 return {'error_message': _extract_error_message(resp)}
             machine_id = resp['machine_id']
-            machine_details = Instance.get_instance_details(machine_id=machine_id, region=resolved_region)
+            machine_details = Instance.get_instance_details(machine_id=machine_id)
             instance_params.update({
                 'hdd': storage,
-                'name': machine_details.get('name'),
+                'name': machine_details.get('instance_name') or machine_details.get('name'),
                 'url': machine_details.get('url'),
                 'endpoints': machine_details.get('endpoints'),
                 'ssh_str': machine_details.get('ssh_str'),
                 'status': machine_details.get('status'),
                 'machine_id': machine_details.get('machine_id'),
-                'duration': machine_details.get('frequency'),
+                'duration': _normalize_duration(machine_details.get('frequency') or 'hour'),
                 'template': machine_details.get('framework'),
+                'http_ports': machine_details.get('http_ports', ''),
+                'is_reserved': machine_details.get('is_reserved', is_reserved),
         })
 
             instance = cls(**instance_params)
             instance.region = machine_details.get('region', resolved_region)
+            instance.fs_id = machine_details.get('fs_id')
+            instance.disk_type = machine_details.get('disk_type')
             return instance
 
         except ValueError as e:
             return {'error_message': str(e)}
-        
+
         except InstanceCreationException as e:
             return {'error_message': str(e)}
 
         except Exception as e:
-            return {'error_message' : "Some unexpected error had occured. Please reach to the team."}
+            return {'error_message' : f"Unexpected error: {e}"}
 
     def __str__(self):
         """Returns a formatted string with instance metadata when the object is printed."""
@@ -354,29 +457,33 @@ class InstanceCreationException(Exception):
 class User(object):
     def __init__(self) -> None:
         pass
-    
+
     @classmethod
     def get_instances(cls)->list[Instance]:
-        resp = get(f"users/fetch", 
+        resp = get(f"users/fetch",
                     jarvisclient.token)
         instances = []
         for instance in resp['instances']:
-            inst = Instance(hdd=int(instance['hdd']),
+            inst = Instance(hdd=int(instance.get('hdd') or 0),
                             gpu_type=instance['gpu_type'],
-                            name=instance['instance_name'],
-                            url=instance['url'],
-                            endpoints=instance['endpoints'],
-                            ssh_str=instance['ssh_str'],
+                            name=instance.get('instance_name', ''),
+                            url=instance.get('url', ''),
+                            endpoints=instance.get('endpoints', ''),
+                            ssh_str=instance.get('ssh_str', ''),
                             status=instance['status'],
                             machine_id=instance['machine_id'],
-                            # duration=instance['frequency'],
-                            template=instance['framework'],
-                            num_gpus=instance['num_gpus'],
+                            duration=_normalize_duration(instance.get('frequency') or 'hour'),
+                            template=instance.get('framework', ''),
+                            num_gpus=instance.get('num_gpus'),
+                            is_reserved=instance.get('is_reserved', True),
+                            http_ports=instance.get('http_ports') or '',
                             )
             inst.region = instance.get('region', DEFAULT_REGION)
+            inst.fs_id = instance.get('fs_id')
+            inst.disk_type = instance.get('disk_type')
             instances.append(inst)
         return instances
-    
+
     @classmethod
     def get_instance(cls, instance_id=None) -> Instance:
         assert instance_id != None, 'pass a valid instance/machine id'
@@ -385,33 +492,33 @@ class User(object):
         if len(instance) == 1:
             return instance[0]
         print("Invalid machine id")
-    
+
     @classmethod
     def get_templates(cls):
-        templates = get(f"misc/frameworks", 
+        templates = get(f"misc/frameworks",
                     jarvisclient.token)
         return {'templates' : [template['id'] for template in templates['frameworks']]}
-    
+
     @classmethod
     def get_balance(cls):
-        return get(f"users/balance", 
+        return get(f"users/balance",
                     jarvisclient.token)
-    
+
     @classmethod
     def get_scripts(cls):
         resp = get("/scripts/",jarvisclient.token)
         return resp['script_meta']
-    
+
 class FileSystem(object):
     def list(self):
         return get(f"filesystem/list",jarvisclient.token)
-    
+
     def create(self, fs_name, storage):
         return post({'fs_name':fs_name,'storage':storage},
                     f"filesystem/create",
                     jarvisclient.token
                     )
-    
+
     def delete(self, fs_id):
         return post({},
                     f"filesystem/delete",
